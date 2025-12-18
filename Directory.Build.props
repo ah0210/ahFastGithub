@@ -1,10 +1,10 @@
 <Project>
 	<PropertyGroup>
-		<Version>2.1.5</Version>	
+		<Version>2.2.0</Version>	
 		<Nullable>enable</Nullable>
 		<TargetFramework>net10.0</TargetFramework>
 		<IsWebConfigTransformDisabled>true</IsWebConfigTransformDisabled> 		
-		<Description>github加速神器</Description>
+		<Description>github加速 net10</Description>
 		<Copyright>https://github.com/dotnetcore/FastGithub</Copyright>
 		<RuntimeIdentifier>win-x64</RuntimeIdentifier>	
 	</PropertyGroup>
