@@ -1,4 +1,4 @@
-﻿﻿using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using System;
 using System.IO;
 
@@ -24,7 +24,7 @@ namespace FastGithub
                 Args = args,
                 ContentRootPath = contentRoot
             };
-            CreateWebApplication(options).Run();
+            CreateWebApplication(options).Run(singleton: true);
         }
 
         /// <summary>

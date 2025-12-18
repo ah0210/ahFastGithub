@@ -68,22 +68,18 @@ namespace FastGithub.DomainResolve
         /// <returns></returns>
         public async IAsyncEnumerable<IPAddress> ResolveAsync(DnsEndPoint endPoint, bool fastSort, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
-            this.logger.LogInformation($"正在解析域名 {endPoint.Host}:{endPoint.Port} (快速排序: {fastSort})...");
             var hashSet = new HashSet<IPAddress>();
             await foreach (var dns in this.GetDnsServersAsync(cancellationToken))
             {
                 var addresses = await this.LookupAsync(dns, endPoint, fastSort, cancellationToken);
-                this.logger.LogInformation($"从DNS服务器 {dns.Address}:{dns.Port} 解析到 {addresses.Count} 个IP地址");
                 foreach (var address in addresses)
                 {
                     if (hashSet.Add(address) == true)
                     {
-                        this.logger.LogDebug($"添加新解析的IP地址: {address}");
                         yield return address;
                     }
                 }
             }
-            this.logger.LogInformation($"域名 {endPoint.Host} 总共解析到 {hashSet.Count} 个唯一IP地址");
         }
 
         /// <summary>
@@ -95,25 +91,15 @@ namespace FastGithub.DomainResolve
             var cryptDns = this.dnscryptProxy.LocalEndPoint;
             if (cryptDns != null)
             {
-                this.logger.LogInformation($"使用DnscryptProxy DNS服务器: {cryptDns.Address}:{cryptDns.Port}");
                 yield return cryptDns;
                 yield return cryptDns;
-            }
-            else
-            {
-                this.logger.LogWarning("DnscryptProxy未启动，将使用备用DNS服务器");
             }
 
             foreach (var dns in this.fastGithubConfig.FallbackDns)
             {
                 if (await this.IsDnsAvailableAsync(dns, cancellationToken))
                 {
-                    this.logger.LogInformation($"使用可用的备用DNS服务器: {dns.Address}:{dns.Port}");
                     yield return dns;
-                }
-                else
-                {
-                    this.logger.LogWarning($"备用DNS服务器不可用: {dns.Address}:{dns.Port}");
                 }
             }
         }

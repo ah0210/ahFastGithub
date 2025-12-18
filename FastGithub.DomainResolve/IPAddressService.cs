@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
@@ -27,21 +26,18 @@ namespace FastGithub.DomainResolve
         private record AddressElapsed(IPAddress Address, TimeSpan Elapsed);
         private readonly TimeSpan problemElapsedExpiration = TimeSpan.FromMinutes(1d);
         private readonly TimeSpan normalElapsedExpiration = TimeSpan.FromMinutes(5d);
-        private readonly TimeSpan connectTimeout = TimeSpan.FromSeconds(15d);
+        private readonly TimeSpan connectTimeout = TimeSpan.FromSeconds(5d);
         private readonly IMemoryCache addressElapsedCache = new MemoryCache(Options.Create(new MemoryCacheOptions()));
 
         private readonly DnsClient dnsClient;
-        private readonly ILogger<IPAddressService> logger;
 
         /// <summary>
         /// IP服务
         /// </summary>
         /// <param name="dnsClient"></param>
-        /// <param name="logger"></param>
-        public IPAddressService(DnsClient dnsClient, ILogger<IPAddressService> logger)
+        public IPAddressService(DnsClient dnsClient)
         {
             this.dnsClient = dnsClient;
-            this.logger = logger;
         }
 
         /// <summary>
@@ -53,7 +49,6 @@ namespace FastGithub.DomainResolve
         /// <returns></returns>
         public async Task<IPAddress[]> GetAddressesAsync(DnsEndPoint dnsEndPoint, IEnumerable<IPAddress> oldAddresses, CancellationToken cancellationToken)
         {
-            this.logger.LogInformation($"正在获取 {dnsEndPoint.Host}:{dnsEndPoint.Port} 的可连接IP...");
             var ipEndPoints = new HashSet<IPEndPoint>();
 
             // 历史未过期的IP节点
@@ -74,24 +69,19 @@ namespace FastGithub.DomainResolve
                 this.domainAddressCache.Set(domainAddress, default(object), this.domainAddressExpiration);
             }
 
-            this.logger.LogInformation($"为 {dnsEndPoint.Host} 解析到 {ipEndPoints.Count} 个IP地址");
             if (ipEndPoints.Count == 0)
             {
-                this.logger.LogWarning($"未解析到 {dnsEndPoint.Host} 的任何IP地址");
                 return Array.Empty<IPAddress>();
             }
 
             var addressElapsedTasks = ipEndPoints.Select(item => this.GetAddressElapsedAsync(item, cancellationToken));
             var addressElapseds = await Task.WhenAll(addressElapsedTasks);
 
-            var availableAddresses = addressElapseds
+            return addressElapseds
                 .Where(item => item.Elapsed < TimeSpan.MaxValue)
                 .OrderBy(item => item.Elapsed)
                 .Select(item => item.Address)
                 .ToArray();
-
-            this.logger.LogInformation($"{dnsEndPoint.Host} 可用IP地址: {string.Join(", ", availableAddresses)}");
-            return availableAddresses;
         }
 
 
@@ -105,21 +95,18 @@ namespace FastGithub.DomainResolve
         {
             if (this.addressElapsedCache.TryGetValue<AddressElapsed>(endPoint, out var addressElapsed))
             {
-                this.logger.LogDebug($"从缓存获取 {endPoint.Address} 的连接时延: {addressElapsed.Elapsed.TotalMilliseconds}ms");
                 return addressElapsed;
             }
 
             var stopWatch = Stopwatch.StartNew();
             try
             {
-                this.logger.LogDebug($"正在测试连接到 {endPoint.Address}:{endPoint.Port} (超时: {this.connectTimeout.TotalSeconds}s)...");
                 using var timeoutTokenSource = new CancellationTokenSource(this.connectTimeout);
                 using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutTokenSource.Token);
                 using var socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
                 await socket.ConnectAsync(endPoint, linkedTokenSource.Token);
 
                 addressElapsed = new AddressElapsed(endPoint.Address, stopWatch.Elapsed);
-                this.logger.LogInformation($"成功连接到 {endPoint.Address}:{endPoint.Port}，耗时: {addressElapsed.Elapsed.TotalMilliseconds:F2}ms");
                 return this.addressElapsedCache.Set(endPoint, addressElapsed, this.normalElapsedExpiration);
             }
             catch (Exception ex)
@@ -128,7 +115,6 @@ namespace FastGithub.DomainResolve
 
                 addressElapsed = new AddressElapsed(endPoint.Address, TimeSpan.MaxValue);
                 var expiration = IsLocalNetworkProblem(ex) ? this.problemElapsedExpiration : this.normalElapsedExpiration;
-                this.logger.LogWarning($"连接到 {endPoint.Address}:{endPoint.Port} 失败: {ex.Message}");
                 return this.addressElapsedCache.Set(endPoint, addressElapsed, expiration);
             }
             finally

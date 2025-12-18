@@ -1,5 +1,6 @@
-﻿using FastGithub.Configuration;
+using FastGithub.Configuration;
 using FastGithub.Http;
+using FastGithub.HttpServer.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System;
@@ -130,11 +131,12 @@ namespace FastGithub.HttpServer.HttpMiddlewares
                 return;
             }
 
-            await context.Response.WriteAsJsonAsync(new
-            {
-                error = error.ToString(),
-                message = context.GetForwarderErrorFeature()?.Exception?.Message
-            });
+            var errorResponse = new ProxyErrorResponse(
+                error.ToString(),
+                context.GetForwarderErrorFeature()?.Exception?.Message
+            );
+
+            await context.Response.WriteAsJsonAsync(errorResponse);
         }
     }
 }

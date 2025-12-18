@@ -1,4 +1,4 @@
-using FastGithub.Configuration;
+﻿using FastGithub.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
@@ -72,7 +72,7 @@ namespace FastGithub.DomainResolve
         /// <returns></returns>
         private async Task StartCoreAsync(CancellationToken cancellationToken)
         {
-            // 检查dnscrypt-proxy文件是否存在
+            // 检查dnscrypt-proxy文件是否存在 //ah2026
             if (!File.Exists(this.exeFilePath) || !File.Exists(this.tomlFilePath))
             {
                 this.logger.LogInformation($"{this.processName}文件不存在，跳过启动");
