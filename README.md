@@ -1,14 +1,14 @@
 # FastGithub
 github加速神器，解决github打不开、用户头像无法加载、releases无法上传下载、git-clone、git-pull、git-push失败等问题。
 
-* 原仓库 [https://github.com/dotnetcore/fastgithub 已经没有了，所以拿了最新版本改了自用。](https://github.com/creazyboyone/FastGithub)
+* 原仓库 (https://github.com/creazyboyone/FastGithub)
 
-自己修改了一下，升级到 .net10
-dotnet build FastGithub.sln
-位于： E:\mygit\FastGithub\FastGithub\bin\Debug\net10.0\win-x64
+* 自己修改了一下，升级到 .net10
+* dotnet build FastGithub.sln
+* 位于： E:\mygit\FastGithub\FastGithub\bin\Debug\net10.0\win-x64
 
-https://dotnet.microsoft.com/zh-cn/
-下载安装最新  .net10
+* https://dotnet.microsoft.com/zh-cn/
+* 下载安装最新  .net10
 
 
 ### 1 写在前面
