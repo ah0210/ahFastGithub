@@ -29,18 +29,8 @@ namespace FastGithub
         public static void ConfigureHost(this WebApplicationBuilder builder)
         {
             builder.Host.UseSystemd().UseWindowsService();
-            builder.Host.UseSerilog((hosting, logger) =>
-            {
-                var template = "{Timestamp:O} [{Level:u3}]{NewLine}{SourceContext}{NewLine}{Message:lj}{NewLine}{Exception}{NewLine}";
-                logger
-                    .ReadFrom.Configuration(hosting.Configuration)
-                    .Enrich.FromLogContext()
-                    .WriteTo.Console(outputTemplate: template)
-                    .WriteTo.File(Path.Combine("logs", @"log.txt"), rollingInterval: RollingInterval.Day, outputTemplate: template);
-
-                var udpLoggerPort = hosting.Configuration.GetValue(nameof(AppOptions.UdpLoggerPort), 38457);
-                logger.WriteTo.UDPSink(IPAddress.Loopback, udpLoggerPort);
-            });
+            
+            // 注意：Serilog将在ConfigureServices中配置，以便使用AppOptions
         }
 
         /// <summary>
@@ -96,8 +86,27 @@ namespace FastGithub
             var services = builder.Services;
             var configuration = builder.Configuration;
 
+            // WebApplicationBuilder已经自动处理命令行参数，无需手动添加
+            
             services.Configure<AppOptions>(configuration);
             services.Configure<FastGithubOptions>(configuration.GetSection(nameof(FastGithub)));
+
+            // 配置Serilog，此时AppOptions已经可用
+            var appOptions = new AppOptions();
+            configuration.Bind(appOptions);
+            builder.Host.UseSerilog((hosting, logger) =>
+            {
+                var template = "{Timestamp:O} [{Level:u3}]{NewLine}{SourceContext}{NewLine}{Message:lj}{NewLine}{Exception}{NewLine}";
+                logger
+                    .ReadFrom.Configuration(hosting.Configuration)
+                    .Enrich.FromLogContext()
+                    .WriteTo.Console(outputTemplate: template)
+                    .WriteTo.File(Path.Combine("logs", @"log.txt"), rollingInterval: RollingInterval.Day, outputTemplate: template);
+
+                // 使用从配置中获取的实际UdpLoggerPort
+                var udpLoggerPort = appOptions.UdpLoggerPort > 0 ? appOptions.UdpLoggerPort : 38457;
+                logger.WriteTo.UDPSink(IPAddress.Loopback, udpLoggerPort);
+            });
 
             services.AddConfiguration();
             services.AddDomainResolve();

@@ -1,4 +1,4 @@
-﻿using LiveCharts;
+using LiveCharts;
 using LiveCharts.Configurations;
 using LiveCharts.Wpf;
 using Newtonsoft.Json;
@@ -54,15 +54,23 @@ namespace FastGithub.UI
 
         private async void InitFlowChartAsync()
         {
-            using var httpClient = new HttpClient();
+            using var httpClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(1d) // 设置超时时间，避免长时间阻塞
+            };
+            
+            // 尝试不同的端口，因为GlobalListener会尝试获取可用端口
+            var ports = new[] { 80, 3880, 38457 }; // 默认端口和可能的备用端口
+            
             while (this.Dispatcher.HasShutdownStarted == false)
             {
                 try
                 {
-                    await this.FlushFlowStatisticsAsync(httpClient);
+                    await this.FlushFlowStatisticsAsync(httpClient, ports);
                 }
                 catch (Exception)
                 {
+                    // 忽略异常，继续尝试
                 }
                 finally
                 {
@@ -71,27 +79,42 @@ namespace FastGithub.UI
             }
         }
 
-        private async Task FlushFlowStatisticsAsync(HttpClient httpClient)
+        private async Task FlushFlowStatisticsAsync(HttpClient httpClient, int[] ports)
         {
-            var response = await httpClient.GetAsync("http://localhost/flowStatistics");
-            var json = await response.EnsureSuccessStatusCode().Content.ReadAsStringAsync();
-            var flowStatistics = JsonConvert.DeserializeObject<FlowStatistics>(json);
-            if (flowStatistics == null)
+            // 尝试所有可能的端口
+            foreach (var port in ports)
             {
-                return;
-            }
+                try
+                {
+                    var url = $"http://localhost:{port}/flowStatistics";
+                    var response = await httpClient.GetAsync(url);
+                    var json = await response.EnsureSuccessStatusCode().Content.ReadAsStringAsync();
+                    var flowStatistics = JsonConvert.DeserializeObject<FlowStatistics>(json);
+                    if (flowStatistics == null)
+                    {
+                        return;
+                    }
 
-            this.textBlockRead.Text = FlowStatistics.ToNetworkSizeString(flowStatistics.TotalRead);
-            this.textBlockWrite.Text = FlowStatistics.ToNetworkSizeString(flowStatistics.TotalWrite);
+                    this.textBlockRead.Text = FlowStatistics.ToNetworkSizeString(flowStatistics.TotalRead);
+                    this.textBlockWrite.Text = FlowStatistics.ToNetworkSizeString(flowStatistics.TotalWrite);
 
-            var timestamp = GetTimestamp(DateTime.Now);
-            this.readSeries.Values.Add(new RateTick(flowStatistics.ReadRate, timestamp));
-            this.writeSeries.Values.Add(new RateTick(flowStatistics.WriteRate, timestamp));
+                    var timestamp = GetTimestamp(DateTime.Now);
+                    this.readSeries.Values.Add(new RateTick(flowStatistics.ReadRate, timestamp));
+                    this.writeSeries.Values.Add(new RateTick(flowStatistics.WriteRate, timestamp));
 
-            if (this.readSeries.Values.Count > 60)
-            {
-                this.readSeries.Values.RemoveAt(0);
-                this.writeSeries.Values.RemoveAt(0);
+                    if (this.readSeries.Values.Count > 60)
+                    {
+                        this.readSeries.Values.RemoveAt(0);
+                        this.writeSeries.Values.RemoveAt(0);
+                    }
+                    
+                    break; // 成功获取数据，退出循环
+                }
+                catch (Exception)
+                {
+                    // 尝试下一个端口
+                    continue;
+                }
             }
         }
 

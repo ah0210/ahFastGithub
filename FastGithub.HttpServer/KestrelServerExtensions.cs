@@ -1,4 +1,4 @@
-﻿using FastGithub.Configuration;
+using FastGithub.Configuration;
 using FastGithub.HttpServer.Certs;
 using FastGithub.HttpServer.TcpMiddlewares;
 using FastGithub.HttpServer.TlsMiddlewares;
@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System;
+using System.Net;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
@@ -98,7 +99,9 @@ namespace FastGithub
         public static void ListenHttpReverseProxy(this KestrelServerOptions kestrel)
         {
             var httpPort = GlobalListener.HttpPort;
-            kestrel.ListenLocalhost(httpPort);
+            // 同时监听IPv4和IPv6的localhost
+            kestrel.Listen(IPAddress.Loopback, httpPort); // IPv4
+            kestrel.Listen(IPAddress.IPv6Loopback, httpPort); // IPv6
 
             if (OperatingSystem.IsWindows())
             {

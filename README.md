@@ -1,7 +1,7 @@
 # FastGithub
 github加速神器，解决github打不开、用户头像无法加载、releases无法上传下载、git-clone、git-pull、git-push失败等问题。
 
-* 原仓库 (https://github.com/creazyboyone/FastGithub)
+【https://github.com/ah0210/ahFastGithub】
 
 * 自己修改了一下，升级到 .net10
 * https://dotnet.microsoft.com/zh-cn/

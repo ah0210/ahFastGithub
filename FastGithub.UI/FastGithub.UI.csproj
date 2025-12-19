@@ -1,15 +1,15 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<UseWPF>true</UseWPF>
 		<UseWindowsForms>true</UseWindowsForms>
 		<OutputType>WinExe</OutputType>
-		<LangVersion>8.0</LangVersion> 
-		<TargetFramework>net45</TargetFramework>
+		<LangVersion>latest</LangVersion>
+		<TargetFramework>net10.0-windows</TargetFramework>
 		<ApplicationIcon>app.ico</ApplicationIcon>
 		<ApplicationManifest>app.manifest</ApplicationManifest>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
-		<AutoGenerateBindingRedirects>False</AutoGenerateBindingRedirects>
+		<AutoGenerateBindingRedirects>True</AutoGenerateBindingRedirects>
 		<StartupObject></StartupObject>
 	</PropertyGroup>
 
@@ -19,16 +19,8 @@
 	</ItemGroup> 
 
 	<ItemGroup>
-		<Reference Include="System.Net.Http" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<PackageReference Include="LiveCharts.Wpf" Version="0.9.7">
-			<PrivateAssets>all</PrivateAssets>
-		</PackageReference>
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.1">
-			<PrivateAssets>all</PrivateAssets>
-		</PackageReference>
+		<PackageReference Include="LiveCharts.Wpf" Version="0.9.7" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 	</ItemGroup>
 
 </Project>

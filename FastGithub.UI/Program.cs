@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -91,17 +91,68 @@ namespace FastGithub.UI
         /// <returns></returns>
         private static void StartFastGithub()
         {
-            if (File.Exists(FASTGITHUB_PATH) == false)
+            // 尝试在不同位置查找fastgithub.exe
+            var potentialPaths = new[]
             {
+                FASTGITHUB_PATH, // 当前目录
+                Path.Combine("..", "FastGithub", "bin", "Debug", "net10.0", "win-x64", FASTGITHUB_PATH), // 调试目录
+                Path.Combine("..", "..", "FastGithub", "bin", "Debug", "net10.0", "win-x64", FASTGITHUB_PATH), // 发布目录
+                Path.Combine("FastGithub", FASTGITHUB_PATH) // 同级目录
+            };
+
+            string? fastgithubPath = null;
+            foreach (var path in potentialPaths)
+            {
+                if (File.Exists(path))
+                {
+                    fastgithubPath = path;
+                    break;
+                }
+            }
+
+            if (fastgithubPath == null)
+            {
+                // 如果找不到，尝试构建主程序
+                try
+                {
+                    var buildStartInfo = new ProcessStartInfo
+                    {
+                        FileName = "dotnet",
+                        Arguments = @"build ..\FastGithub -c Debug -r win-x64",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    Process.Start(buildStartInfo)?.WaitForExit();
+
+                    // 再次尝试查找
+                    foreach (var path in potentialPaths)
+                    {
+                        if (File.Exists(path))
+                        {
+                            fastgithubPath = path;
+                            break;
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                    // 忽略构建异常
+                }
+            }
+
+            if (fastgithubPath == null)
+            {
+                MessageBox.Show($"无法找到 {FASTGITHUB_PATH}，请确保主程序已构建。", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
             var startInfo = new ProcessStartInfo
             {
-                FileName = FASTGITHUB_PATH,
+                FileName = fastgithubPath,
                 Arguments = $"ParentProcessId={Process.GetCurrentProcess().Id} UdpLoggerPort={UdpLogger.Port}",
                 UseShellExecute = false,
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(fastgithubPath) // 设置工作目录为主程序所在目录
             };
             Process.Start(startInfo);
         }
