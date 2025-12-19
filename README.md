@@ -25,10 +25,10 @@ dotnet build FastGithub.sln
 #发布脚本
 .\publish.cmd
 
-# 打包脚本
+# 打包压缩脚本，压缩率不高，取消，使用 7zip手动压缩
 # bash pack.sh
 # cd publish; Compress-Archive -Path fastgithub_win-x64 -DestinationPath fastgithub_win-x64.zip
-cd E:\mygit\FastGithub\publish; $platforms = "win-x64", "linux-x64", "linux-arm64", "osx-x64", "osx-arm64"; foreach ($platform in $platforms) { $sourcePath = "fastgithub_$platform"; $destinationPath = "fastgithub_$platform.zip"; Compress-Archive -Path $sourcePath -DestinationPath $destinationPath -Force }
+# cd E:\mygit\FastGithub\publish; $platforms = "win-x64", "linux-x64", "linux-arm64", "osx-x64", "osx-arm64"; foreach ($platform in $platforms) { $sourcePath = "fastgithub_$platform"; $destinationPath = "fastgithub_$platform.zip"; Compress-Archive -Path $sourcePath -DestinationPath $destinationPath -Force }
 
 #让我检查Windows x64版本的发布文件是否完整，特别是可执行文件的大小。 
 # 进入 /publish
