@@ -136,7 +136,23 @@ namespace FastGithub.HttpServer.HttpMiddlewares
                 context.GetForwarderErrorFeature()?.Exception?.Message
             );
 
-            await context.Response.WriteAsJsonAsync(errorResponse);
+            try
+            {
+                // 显式配置JsonSerializerOptions，使用DefaultJsonTypeInfoResolver解决反射序列化被禁用的问题
+                context.Response.ContentType = "application/json; charset=utf-8";
+                var options = new System.Text.Json.JsonSerializerOptions
+                {
+                    TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
+                };
+                var json = System.Text.Json.JsonSerializer.Serialize(errorResponse, options);
+                await context.Response.WriteAsync(json);
+            }
+            catch (Exception ex)
+            {
+                // 回退到简单的文本响应
+                context.Response.ContentType = "text/plain; charset=utf-8";
+                await context.Response.WriteAsync($"Proxy Error: {error} - {ex.Message}");
+            }
         }
     }
 }

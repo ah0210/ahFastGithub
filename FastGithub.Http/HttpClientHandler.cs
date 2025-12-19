@@ -1,4 +1,4 @@
-﻿using FastGithub.Configuration;
+using FastGithub.Configuration;
 using FastGithub.DomainResolve;
 using System;
 using System.Collections.Generic;
@@ -150,6 +150,21 @@ namespace FastGithub.Http
             // 验证证书有效性
             bool ValidateServerCertificate(object sender, X509Certificate? cert, X509Chain? chain, SslPolicyErrors errors)
             {
+                // 对于 GitHub 相关域名，完全信任证书
+                var domain = context.DnsEndPoint.Host;
+                if (domain.EndsWith(".github.com") || domain == "github.com" || domain.EndsWith(".githubusercontent.com") || domain == "collector.github.com")
+                {
+                    return true;
+                }
+
+                // 对于其他域名，使用宽松的验证规则
+                var seriousErrors = errors & ~(SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch);
+                if (seriousErrors != SslPolicyErrors.None)
+                {
+                    return false;
+                }
+
+                // 处理名称不匹配错误
                 if (errors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch))
                 {
                     if (this.domainConfig.TlsIgnoreNameMismatch == true)
@@ -157,12 +172,12 @@ namespace FastGithub.Http
                         return true;
                     }
 
-                    var domain = context.DnsEndPoint.Host;
                     var dnsNames = ReadDnsNames(cert);
                     return dnsNames.Any(dns => IsMatch(dns, domain));
                 }
 
-                return errors == SslPolicyErrors.None;
+                // 允许其他情况（包括证书链错误）
+                return true;
             }
         }
 
