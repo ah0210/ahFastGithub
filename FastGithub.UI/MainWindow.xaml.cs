@@ -31,7 +31,7 @@ namespace FastGithub.UI
             {
                 Visible = true,
                 Text = FASTGITHUB_UI,
-                ContextMenu = new System.Windows.Forms.ContextMenu(new[] { upgrade, exit }),
+                ContextMenu = new System.Windows.Forms.ContextMenu(new[] {  exit }), ///upgrade, 取消升级按钮 ah2026
                 Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Windows.Forms.Application.ExecutablePath)
             };
 
