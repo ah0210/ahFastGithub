@@ -39,17 +39,28 @@ namespace FastGithub.UI
         /// <param name="sender"></param>
         /// <param name="args"></param>
         /// <returns></returns>
-        private static Assembly? OnAssemblyResolve(object sender, ResolveEventArgs args)
+        private static Assembly? OnAssemblyResolve(object? sender, ResolveEventArgs args)
         {
+            if (string.IsNullOrEmpty(args.Name))
+            {
+                return null;
+            }
+
             var name = new AssemblyName(args.Name).Name;
-            if (name.EndsWith(".resources"))
+            if (string.IsNullOrEmpty(name) || name.EndsWith(".resources"))
             {
                 return default;
             }
 
-            var stream = Application.GetResourceStream(new Uri($"Resource/{name}.dll", UriKind.Relative)).Stream;
+            var resourceInfo = Application.GetResourceStream(new Uri($"Resource/{name}.dll", UriKind.Relative));
+            if (resourceInfo == null)
+            {
+                return null;
+            }
+
+            using var stream = resourceInfo.Stream;
             var buffer = new byte[stream.Length];
-            stream.Read(buffer, 0, buffer.Length);
+            stream.ReadExactly(buffer, 0, buffer.Length);
             return Assembly.Load(buffer);
         }
 
@@ -66,7 +77,12 @@ namespace FastGithub.UI
             }
             var name = $"{Process.GetCurrentProcess().ProcessName}.exe";
             using var webBrowser = new System.Windows.Forms.WebBrowser();
-            var value = int.Parse($"{webBrowser.Version.Major}000");
+            var version = webBrowser.Version;
+            if (version == null)
+            {
+                return;
+            }
+            var value = int.Parse($"{version.Major}000");
             registryKey.SetValue(name, value, RegistryValueKind.DWord);
         }
 

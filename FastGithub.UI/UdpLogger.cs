@@ -75,8 +75,8 @@ namespace FastGithub.UI
         {
             EndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
             var length = socket.EndReceiveFrom(ar, ref remoteEP);
-            var taskCompletionSource = (TaskCompletionSource<int>)ar.AsyncState;
-            taskCompletionSource.TrySetResult(length);
+            var taskCompletionSource = ar.AsyncState as TaskCompletionSource<int>;
+            taskCompletionSource?.TrySetResult(length);
         }
     }
 }

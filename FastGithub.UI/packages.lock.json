@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "LiveCharts": {
+        "type": "Direct",
+        "requested": "[0.9.7, )",
+        "resolved": "0.9.7",
+        "contentHash": "p4xyBrUaNNfkWZSNsIle0r51cyVyFg0Yi0uBRZM5GQtdFiA/7guZHlffFyNUILIdux10Ch2hUaJpcZENVU9aaQ=="
+      },
+      "LiveCharts.Wpf": {
+        "type": "Direct",
+        "requested": "[0.9.7, )",
+        "resolved": "0.9.7",
+        "contentHash": "lv6YZoK0B4yWykMq5b9grZXtIbTj+OWu4sVN9GDpdgV6zffu64m4d5CW8KSjfSl9rB8VU649x1NZvhoU67hCDg==",
+        "dependencies": {
+          "LiveCharts": "0.9.7"
+        }
+      },
+      "Newtonsoft.Json": {
+        "type": "Direct",
+        "requested": "[13.0.4, )",
+        "resolved": "13.0.4",
+        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      }
+    },
+    "net10.0-windows7.0/win-x64": {}
+  }
+}
