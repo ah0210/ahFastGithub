@@ -21,6 +21,10 @@ dotnet build FastGithub.sln
 ```
 
 ### 发布脚本
+
+- 包含DNSCrypt-Proxy版本 ：适合注重DNS隐私和安全性的用户
+- 不包含DNSCrypt-Proxy版本 ：体积更小，启动更快，适合更关注核心功能和性能的用户
+
 ```bash
 # 发布默认版本（包含DNSCrypt-Proxy）
 ./publish.cmd
