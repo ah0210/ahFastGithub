@@ -7,54 +7,38 @@ github加速神器，解决github打不开、用户头像无法加载、releases
 * https://dotnet.microsoft.com/zh-cn/
 * 下载安装最新  .net10
 
-### 打包
+## 构建与发布
 
+### 更新项目依赖
+```bash
+dotnet-outdated FastGithub.sln -u
 ```
-安装.NET 10 SDK
-构建项目
-执行发布脚本
-执行打包脚本
-验证发布结果
+* 建议定期运行 dotnet-outdated 工具检查依赖更新，以保持项目依赖的安全性和性能。
 
-dotnet --version
-(TraeAI-3) E:\mygit\FastGithub [0:] $ dotnet --version
-
-#构建项目 位于： E:\mygit\FastGithub\FastGithub\bin\Debug\net10.0\win-x64
+### 构建项目
+```bash
 dotnet build FastGithub.sln
+```
 
-#发布脚本
-.\publish.cmd
+### 发布脚本
+```bash
+# 发布默认版本（包含DNSCrypt-Proxy）
+./publish.cmd
 
-# 打包压缩脚本，压缩率不高，取消，使用 7zip手动压缩
-# bash pack.sh
-# cd publish; Compress-Archive -Path fastgithub_win-x64 -DestinationPath fastgithub_win-x64.zip
-# cd E:\mygit\FastGithub\publish; $platforms = "win-x64", "linux-x64", "linux-arm64", "osx-x64", "osx-arm64"; foreach ($platform in $platforms) { $sourcePath = "fastgithub_$platform"; $destinationPath = "fastgithub_$platform.zip"; Compress-Archive -Path $sourcePath -DestinationPath $destinationPath -Force }
+# 发布两个版本（包含和不包含DNSCrypt-Proxy）
+./publish-without-dnscrypt.cmd
+```
 
-#让我检查Windows x64版本的发布文件是否完整，特别是可执行文件的大小。 
-# 进入 /publish
-Get-ChildItem -Path fastgithub_win-x64 -Include fastgithub.exe, FastGithub.UI.exe -Recurse | Select-Object Name, Length
-
-(TraeAI-3) E:\mygit\FastGithub\publish [1:0] $ Get-ChildItem -Path fastgithub_win-x64 -Include fastgithub.exe, FastGithub.UI.exe -Recurse | Select-Object Name, Length
-
-Name                Length
-----                ------
-fastgithub.exe    14797046
-FastGithub.UI.exe  1312256
-
-## 1. 环境检查
-- 确认已安装.NET 10 SDK (版本10.0.101)
-## 2. 发布执行
-执行了项目根目录下的 publish.cmd 脚本，成功为以下平台生成了发布文件：
+### 发布执行
+执行了项目根目录下的发布脚本，成功为以下平台生成了发布文件：
 
 - Windows x64 ( fastgithub_win-x64 )
 - Linux x64 ( fastgithub_linux-x64 )
 - Linux ARM64 ( fastgithub_linux-arm64 )
 - macOS x64 ( fastgithub_osx-x64 )
 - macOS ARM64 ( fastgithub_osx-arm64 )
-## 3. 打包结果
-- 为Windows x64平台创建了zip压缩包： fastgithub_win-x64.zip
-- 所有平台的发布文件都位于 E:\mygit\FastGithub\publish\ 目录下
-## 4. 发布文件内容
+
+### 发布文件内容
 每个平台的发布目录都包含：
 
 - 主程序文件 ( fastgithub 或 fastgithub.exe )
@@ -63,37 +47,27 @@ FastGithub.UI.exe  1312256
 - 许可证文件 ( LICENSE )
 - 文档文件 ( README.md , README.html )
 
+### 两个版本区别
 
-## 注意事项
+1. **包含DNSCrypt-Proxy的版本**：
+   - 目录：`fastgithub_win-x64_with_dnscrypt`
+   - 包含完整的 `dnscrypt-proxy` 目录和相关文件
+   - 支持使用 DNSCrypt-Proxy 进行安全加密的 DNS 解析
+   - 适合注重 DNS 隐私和安全性的用户
+
+2. **不包含DNSCrypt-Proxy的版本**：
+   - 目录：`fastgithub_win-x64_without_dnscrypt`
+   - 已移除 `dnscrypt-proxy` 目录和相关文件
+   - 使用配置文件中的 `FallbackDns` 列表进行 DNS 解析
+   - 体积更小，启动更快
+   - 适合更关注核心功能和性能的用户
+
+### 注意事项
 - 所有发布文件都已包含必要的依赖，无需额外安装.NET运行时
 - 首次使用时可能需要配置系统代理为 http://127.0.0.1:38457
-- Git操作可能需要关闭证书验证： git config --global http.sslverify false
-如果需要其他平台的zip压缩包，可以使用压缩工具手动打包对应的目录。
+- Git操作可能需要关闭证书验证： `git config --global http.sslverify false`
 
-```
-```
-#以下是完整的PowerShell命令，用于一次性压缩所有平台的FastGithub发布文件：
-# 切换到发布目录
-Set-Location -Path "E:\mygit\FastGithub\publish"
-
-# 定义所有平台
-$platforms = "win-x64", "linux-x64", "linux-arm64", "osx-x64", "osx-arm64"
-
-# 遍历所有平台并压缩
-foreach ($platform in $platforms) {
-    $sourceFolder = "fastgithub_$platform"
-    $destinationZip = "fastgithub_$platform.zip"
-    
-    # 压缩目录，-Force参数用于覆盖已存在的zip文件
-    Compress-Archive -Path $sourceFolder -DestinationPath $destinationZip -Force
-    
-    # 显示压缩结果
-    Write-Host "已压缩 $sourceFolder 到 $destinationZip"
-}
-
-```
-
-### 1 写在前面
+## 1 写在前面
 * **fastgithub不具备“翻墙”功能,也没有相关的计划**
 * **fastgithub不支持Windows7等已被发行方停止支持的操作系统，并且也不会主动提供支持**
 * **fastgithub不能为您的游戏加速**
