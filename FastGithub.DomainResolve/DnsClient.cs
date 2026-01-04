@@ -34,12 +34,12 @@ namespace FastGithub.DomainResolve
         private readonly IMemoryCache dnsStateCache = new MemoryCache(Options.Create(new MemoryCacheOptions()));
         private readonly IMemoryCache dnsLookupCache = new MemoryCache(Options.Create(new MemoryCacheOptions()));
 
-        private readonly TimeSpan stateExpiration = TimeSpan.FromMinutes(5d);
-        private readonly TimeSpan minTimeToLive = TimeSpan.FromSeconds(30d);
-        private readonly TimeSpan maxTimeToLive = TimeSpan.FromMinutes(10d);
+        private readonly TimeSpan stateExpiration = TimeSpan.FromMinutes(10d); // 延长DNS服务器状态缓存时间
+        private readonly TimeSpan minTimeToLive = TimeSpan.FromMinutes(1d); // 延长最小缓存时间
+        private readonly TimeSpan maxTimeToLive = TimeSpan.FromMinutes(30d); // 延长最大缓存时间
 
-        private readonly int resolveTimeout = (int)TimeSpan.FromSeconds(4d).TotalMilliseconds;
-        private static readonly TimeSpan tcpConnectTimeout = TimeSpan.FromSeconds(2d);
+        private readonly int resolveTimeout = (int)TimeSpan.FromSeconds(3d).TotalMilliseconds; // 减少解析超时时间
+        private static readonly TimeSpan tcpConnectTimeout = TimeSpan.FromSeconds(1.5d); // 减少TCP连接超时时间
 
         private record LookupResult(IList<IPAddress> Addresses, TimeSpan TimeToLive);
 
@@ -92,15 +92,21 @@ namespace FastGithub.DomainResolve
             if (cryptDns != null)
             {
                 yield return cryptDns;
-                yield return cryptDns;
             }
-
-            foreach (var dns in this.fastGithubConfig.FallbackDns)
+            else
             {
-                if (await this.IsDnsAvailableAsync(dns, cancellationToken))
+                // 当DNSCrypt-Proxy不可用时，对FallbackDns进行测速排序，优先使用响应最快的DNS服务器
+                var sortedDnsServers = await this.GetSortedFallbackDnsAsync(cancellationToken);
+                foreach (var dns in sortedDnsServers)
                 {
                     yield return dns;
                 }
+            }
+
+            // 确保至少返回一个DNS服务器，作为最后的备选
+            if (cryptDns == null && (this.fastGithubConfig.FallbackDns == null || this.fastGithubConfig.FallbackDns.Length == 0))
+            {
+                yield return new IPEndPoint(IPAddress.Parse("8.8.8.8"), DNS_PORT);
             }
         }
 
@@ -182,6 +188,45 @@ namespace FastGithub.DomainResolve
             {
                 semaphore.Release();
             }
+        }
+
+        /// <summary>
+        /// 对FallbackDns进行测速排序
+        /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        private async Task<List<IPEndPoint>> GetSortedFallbackDnsAsync(CancellationToken cancellationToken)
+        {
+            if (this.fastGithubConfig.FallbackDns == null || this.fastGithubConfig.FallbackDns.Length == 0)
+            {
+                return new List<IPEndPoint>();
+            }
+
+            var tasks = this.fastGithubConfig.FallbackDns.Select(async dns =>
+            {
+                var startTime = DateTime.Now;
+                try
+                {
+                    if (await this.IsDnsAvailableAsync(dns, cancellationToken))
+                    {
+                        var endTime = DateTime.Now;
+                        var latency = endTime - startTime;
+                        return (dns, latency, available: true);
+                    }
+                }
+                catch (Exception)
+                {
+                    // 忽略异常，标记为不可用
+                }
+                return (dns, latency: TimeSpan.MaxValue, available: false);
+            });
+
+            var results = await Task.WhenAll(tasks);
+            return results
+                .Where(r => r.available)
+                .OrderBy(r => r.latency)
+                .Select(r => r.dns)
+                .ToList();
         }
 
         /// <summary>
