@@ -25,7 +25,7 @@ dotnet build FastGithub.sln
 # 发布默认版本（包含DNSCrypt-Proxy）
 ./publish.cmd
 
-# 发布两个版本（包含和不包含DNSCrypt-Proxy）
+# 发布两个版本 只 win-x86（/publish 目录下，包含和不包含DNSCrypt-Proxy）
 ./publish-without-dnscrypt.cmd
 ```
 
