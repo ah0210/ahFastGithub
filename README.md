@@ -24,11 +24,8 @@ dotnet build FastGithub.sln
 - 资源优化：减少不必要的网络探测和计算资源消耗
 
 ```bash
-# 发布默认版本（包含DNSCrypt-Proxy）
-./publish.cmd
-
-# 发布两个版本 只 win-x86（/publish 目录下，包含和不包含DNSCrypt-Proxy）
-./publish-without-dnscrypt.cmd
+# 使用统一发布脚本构建两个版本（推荐）
+./publish-unified.cmd
 ```
 
 ### 发布执行
