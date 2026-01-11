@@ -15,7 +15,7 @@ namespace FastGithub.DomainResolve
         private readonly IDomainResolver domainResolver;
         private readonly ILogger<DomainResolveHostedService> logger;
         private readonly TimeSpan dnscryptProxyInitDelay = TimeSpan.FromSeconds(5d);
-        private readonly TimeSpan testPeriodTimeSpan = TimeSpan.FromSeconds(1d);
+        private readonly TimeSpan testPeriodTimeSpan = TimeSpan.FromMinutes(1d);
 
         /// <summary>
         /// 域名解析后台服务
