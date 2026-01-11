@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Threading;
@@ -46,16 +46,31 @@ namespace FastGithub.DomainResolve
 
                 while (stoppingToken.IsCancellationRequested == false)
                 {
-                    await this.domainResolver.TestSpeedAsync(stoppingToken);
+                    try
+                    {
+                        await this.domainResolver.TestSpeedAsync(stoppingToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // 正常取消，直接返回
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        // 记录测速过程中的异常，但不终止服务
+                        this.logger.LogWarning(ex, "域名测速过程中发生异常，将在下一个周期重试");
+                    }
+                    
                     await Task.Delay(this.testPeriodTimeSpan, stoppingToken);
                 }
             }
             catch (OperationCanceledException)
             {
+                // 正常停止
             }
             catch (Exception ex)
             {
-                this.logger.LogError(ex, "域名解析异常");
+                this.logger.LogError(ex, "域名解析后台服务发生严重异常");
             }
         }
 

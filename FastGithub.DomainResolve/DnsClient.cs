@@ -21,7 +21,7 @@ namespace FastGithub.DomainResolve
     /// <summary>
     /// DNS客户端
     /// </summary>
-    sealed class DnsClient
+    sealed class DnsClient : IDisposable
     {
         private const int DNS_PORT = 53;
         private const string LOCALHOST = "localhost";
@@ -31,8 +31,8 @@ namespace FastGithub.DomainResolve
         private readonly ILogger<DnsClient> logger;
 
         private readonly ConcurrentDictionary<string, SemaphoreSlim> semaphoreSlims = new();
-        private readonly IMemoryCache dnsStateCache = new MemoryCache(Options.Create(new MemoryCacheOptions()));
-        private readonly IMemoryCache dnsLookupCache = new MemoryCache(Options.Create(new MemoryCacheOptions()));
+        private readonly IMemoryCache dnsStateCache;
+        private readonly IMemoryCache dnsLookupCache;
 
         private readonly TimeSpan stateExpiration = TimeSpan.FromMinutes(10d); // 延长DNS服务器状态缓存时间
         private readonly TimeSpan minTimeToLive = TimeSpan.FromMinutes(1d); // 延长最小缓存时间
@@ -42,6 +42,9 @@ namespace FastGithub.DomainResolve
         private static readonly TimeSpan tcpConnectTimeout = TimeSpan.FromSeconds(1.5d); // 减少TCP连接超时时间
 
         private record LookupResult(IList<IPAddress> Addresses, TimeSpan TimeToLive);
+
+        private readonly Timer cleanupTimer;
+        private const int MaxCacheSize = 1000; // 最大缓存条目数
 
         /// <summary>
         /// DNS客户端
@@ -57,6 +60,22 @@ namespace FastGithub.DomainResolve
             this.dnscryptProxy = dnscryptProxy;
             this.fastGithubConfig = fastGithubConfig;
             this.logger = logger;
+            
+            // 初始化带大小限制的内存缓存
+            var stateCacheOptions = Options.Create(new MemoryCacheOptions
+            {
+                SizeLimit = 1000 // 限制状态缓存大小
+            });
+            this.dnsStateCache = new MemoryCache(stateCacheOptions);
+
+            var lookupCacheOptions = Options.Create(new MemoryCacheOptions
+            {
+                SizeLimit = 5000 // 限制DNS查询缓存大小
+            });
+            this.dnsLookupCache = new MemoryCache(lookupCacheOptions);
+            
+            // 启动定时清理任务，每10分钟清理一次semaphoreSlims
+            this.cleanupTimer = new Timer(this.CleanupSemaphoreSlims, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
         }
 
         /// <summary>
@@ -138,12 +157,20 @@ namespace FastGithub.DomainResolve
                 using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(timeoutTokenSource.Token, cancellationToken);
                 using var socket = new Socket(dns.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
                 await socket.ConnectAsync(dns, linkedTokenSource.Token);
-                return this.dnsStateCache.Set(dns, true, this.stateExpiration);
+                return this.dnsStateCache.Set(dns, true, new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = this.stateExpiration,
+                    Size = 1
+                });
             }
             catch (Exception)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return this.dnsStateCache.Set(dns, false, this.stateExpiration);
+                return this.dnsStateCache.Set(dns, false, new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = this.stateExpiration,
+                    Size = 1
+                });
             }
             finally
             {
@@ -172,7 +199,11 @@ namespace FastGithub.DomainResolve
                     return value;
                 }
                 var result = await this.LookupCoreAsync(dns, endPoint, fastSort, cancellationToken);
-                return this.dnsLookupCache.Set(key, result.Addresses, result.TimeToLive);
+                return this.dnsLookupCache.Set(key, result.Addresses, new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = result.TimeToLive,
+                    Size = result.Addresses.Count() // 使用实际大小
+                });
             }
             catch (OperationCanceledException)
             {
@@ -182,7 +213,11 @@ namespace FastGithub.DomainResolve
             {
                 this.logger.LogWarning($"{endPoint.Host}@{dns}->{ex.Message}");
                 var expiration = IsSocketException(ex) ? this.maxTimeToLive : this.minTimeToLive;
-                return this.dnsLookupCache.Set(key, Array.Empty<IPAddress>(), expiration);
+                return this.dnsLookupCache.Set(key, Array.Empty<IPAddress>(), new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = expiration,
+                    Size = 1
+                });
             }
             finally
             {
@@ -397,8 +432,56 @@ namespace FastGithub.DomainResolve
             }
             catch (Exception)
             {
-                return default;
+                return null;
             }
+        }
+
+        /// <summary>
+        /// 清理过期的semaphoreSlim对象
+        /// </summary>
+        /// <param name="state"></param>
+        private void CleanupSemaphoreSlims(object? state)
+        {
+            try
+            {
+                // 移除空的键值对，实际上我们无法直接知道SemaphoreSlim是否还在被使用
+                // 但我们可以通过限制字典大小来控制内存使用
+                if (this.semaphoreSlims.Count > MaxCacheSize)
+                {
+                    // 简单地清空字典，让GC回收未被使用的SemaphoreSlim对象
+                    // 在高并发情况下，这可能导致重复创建，但能有效控制内存使用
+                    var keys = this.semaphoreSlims.Keys.Take(this.semaphoreSlims.Count - MaxCacheSize / 2).ToList();
+                    foreach (var key in keys)
+                    {
+                        if (this.semaphoreSlims.TryRemove(key, out var semaphore))
+                        {
+                            semaphore?.Dispose();
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // 忽略清理过程中的异常
+            }
+        }
+
+        /// <summary>
+        /// 释放资源
+        /// </summary>
+        public void Dispose()
+        {
+            this.cleanupTimer?.Dispose();
+            
+            // 释放所有semaphoreSlim对象
+            foreach (var semaphore in this.semaphoreSlims.Values)
+            {
+                semaphore?.Dispose();
+            }
+            this.semaphoreSlims.Clear();
+            
+            this.dnsStateCache?.Dispose();
+            this.dnsLookupCache?.Dispose();
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -104,6 +104,43 @@ namespace FastGithub.Configuration
         public DomainPattern[] GetDomainPatterns()
         {
             return this.domainConfigs.Keys.ToArray();
+        }
+
+        /// <summary>
+        /// 验证配置的有效性
+        /// </summary>
+        /// <returns></returns>
+        public bool ValidateConfiguration(out string errorMessage)
+        {
+            errorMessage = string.Empty;
+
+            // 验证HTTP代理端口范围
+            if (this.HttpProxyPort <= 0 || this.HttpProxyPort > 65535)
+            {
+                errorMessage = $"HTTP代理端口必须在1-65535范围内，当前值: {this.HttpProxyPort}";
+                return false;
+            }
+
+            // 验证Fallback DNS配置
+            if (this.FallbackDns != null)
+            {
+                foreach (var dns in this.FallbackDns)
+                {
+                    if (dns == null)
+                    {
+                        errorMessage = "Fallback DNS配置中存在空值";
+                        return false;
+                    }
+                    // 验证端口范围
+                    if (dns.Port <= 0 || dns.Port > 65535)
+                    {
+                        errorMessage = $"DNS端口必须在1-65535范围内，当前值: {dns.Port}";
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
     }
 }

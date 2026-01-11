@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -82,21 +82,40 @@ namespace FastGithub.DomainResolve
         /// <returns></returns>
         public async Task TestSpeedAsync(CancellationToken cancellationToken)
         {
+            var tasks = new List<Task>();
+            
+            // 并行处理所有DNS端点的测速
             foreach (var keyValue in this.dnsEndPointAddress.OrderBy(item => item.Value.Length))
             {
                 var dnsEndPoint = keyValue.Key;
                 var oldAddresses = keyValue.Value;
 
-                var newAddresses = await this.addressService.GetAddressesAsync(dnsEndPoint, oldAddresses, cancellationToken);
-                this.dnsEndPointAddress[dnsEndPoint] = newAddresses;
+                // 创建异步任务进行测速，但不立即等待
+                tasks.Add(ProcessDnsEndpointAsync(dnsEndPoint, oldAddresses, cancellationToken));
+            }
 
-                var oldSegmentums = oldAddresses.Take(MAX_IP_COUNT);
-                var newSegmentums = newAddresses.Take(MAX_IP_COUNT);
-                if (oldSegmentums.SequenceEqual(newSegmentums) == false)
-                {
-                    var addressArray = string.Join(", ", newSegmentums.Select(item => item.ToString()));
-                    this.logger.LogInformation($"{dnsEndPoint.Host}:{dnsEndPoint.Port}->[{addressArray}]");
-                }
+            // 等待所有测速任务完成
+            await Task.WhenAll(tasks);
+        }
+
+        /// <summary>
+        /// 处理单个DNS端点的测速
+        /// </summary>
+        /// <param name="dnsEndPoint"></param>
+        /// <param name="oldAddresses"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        private async Task ProcessDnsEndpointAsync(DnsEndPoint dnsEndPoint, IPAddress[] oldAddresses, CancellationToken cancellationToken)
+        {
+            var newAddresses = await this.addressService.GetAddressesAsync(dnsEndPoint, oldAddresses, cancellationToken);
+            this.dnsEndPointAddress[dnsEndPoint] = newAddresses;
+
+            var oldSegmentums = oldAddresses.Take(MAX_IP_COUNT);
+            var newSegmentums = newAddresses.Take(MAX_IP_COUNT);
+            if (oldSegmentums.SequenceEqual(newSegmentums) == false)
+            {
+                var addressArray = string.Join(", ", newSegmentums.Select(item => item.ToString()));
+                this.logger.LogInformation($"{dnsEndPoint.Host}:{dnsEndPoint.Port}->[{addressArray}]");
             }
         }
     }
