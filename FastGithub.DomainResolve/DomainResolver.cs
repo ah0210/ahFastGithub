@@ -20,7 +20,12 @@ namespace FastGithub.DomainResolve
         private readonly PersistenceService persistence;
         private readonly IPAddressService addressService;
         private readonly ILogger<DomainResolver> logger;
-        private readonly ConcurrentDictionary<DnsEndPoint, IPAddress[]> dnsEndPointAddress = new();
+        
+        // 按需测速缓存：存储已测速的IP地址，包含测速时间和是否过期的信息
+        private readonly ConcurrentDictionary<DnsEndPoint, (IPAddress[] addresses, DateTime lastUpdateTime, TimeSpan cacheDuration)> speedTestCache = new();
+        
+        // 正在进行测速的锁，防止同一域名重复测速
+        private readonly ConcurrentDictionary<DnsEndPoint, SemaphoreSlim> speedTestLocks = new();
 
         /// <summary>
         /// 域名解析器
@@ -40,9 +45,10 @@ namespace FastGithub.DomainResolve
             this.addressService = addressService;
             this.logger = logger;
 
+            // 从持久化存储加载已知的DNS端点，但不再预加载测速结果
             foreach (var endPoint in persistence.ReadDnsEndPoints())
             {
-                this.dnsEndPointAddress.TryAdd(endPoint, Array.Empty<IPAddress>());
+                this.speedTestCache.TryAdd(endPoint, (Array.Empty<IPAddress>(), DateTime.MinValue, TimeSpan.Zero));
             }
         }
 
@@ -54,29 +60,80 @@ namespace FastGithub.DomainResolve
         /// <returns></returns>
         public async IAsyncEnumerable<IPAddress> ResolveAsync(DnsEndPoint endPoint, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
-            if (this.dnsEndPointAddress.TryGetValue(endPoint, out var addresses) && addresses.Length > 0)
+            // 检查缓存中是否有有效的测速结果
+            if (this.speedTestCache.TryGetValue(endPoint, out var cachedResult))
             {
-                foreach (var address in addresses)
+                // 检查缓存是否仍然有效（未过期）
+                if (DateTime.Now.Subtract(cachedResult.lastUpdateTime) < cachedResult.cacheDuration && 
+                    cachedResult.addresses.Length > 0)
+                {
+                    // 返回缓存的测速结果
+                    foreach (var address in cachedResult.addresses)
+                    {
+                        yield return address;
+                    }
+                    yield break; // 直接结束，不再执行下面的逻辑
+                }
+            }
+            
+            // 如果没有有效缓存或缓存已过期，获取测速锁以防止重复测速
+            var semaphore = this.speedTestLocks.GetOrAdd(endPoint, _ => new SemaphoreSlim(1, 1));
+            await semaphore.WaitAsync(cancellationToken);
+            
+            try
+            {
+                // 双重检查：在获得锁之后再次检查缓存
+                if (this.speedTestCache.TryGetValue(endPoint, out var doubleCheckResult))
+                {
+                    if (DateTime.Now.Subtract(doubleCheckResult.lastUpdateTime) < doubleCheckResult.cacheDuration && 
+                        doubleCheckResult.addresses.Length > 0)
+                    {
+                        // 如果另一个线程已经完成了测速，直接返回结果
+                        foreach (var address in doubleCheckResult.addresses)
+                        {
+                            yield return address;
+                        }
+                        yield break;
+                    }
+                }
+                
+                // 添加端点到持久化存储（如果尚未存在）
+                if (this.speedTestCache.ContainsKey(endPoint) == false)
+                {
+                    this.speedTestCache.TryAdd(endPoint, (Array.Empty<IPAddress>(), DateTime.MinValue, TimeSpan.Zero));
+                    await this.persistence.WriteDnsEndPointsAsync(this.speedTestCache.Keys, cancellationToken);
+                }
+
+                // 对当前端点执行按需测速
+                var oldAddresses = this.speedTestCache.TryGetValue(endPoint, out var oldResult) ? oldResult.addresses : Array.Empty<IPAddress>();
+                var newAddresses = await this.addressService.GetAddressesAsync(endPoint, oldAddresses, cancellationToken);
+                
+                // 更新缓存
+                var cacheDuration = TimeSpan.FromMinutes(30); // 缓存30分钟
+                this.speedTestCache[endPoint] = (newAddresses, DateTime.Now, cacheDuration);
+
+                var oldSegmentums = oldAddresses.Take(MAX_IP_COUNT);
+                var newSegmentums = newAddresses.Take(MAX_IP_COUNT);
+                if (oldSegmentums.SequenceEqual(newSegmentums) == false)
+                {
+                    var addressArray = string.Join(", ", newSegmentums.Select(item => item.ToString()));
+                    this.logger.LogInformation($"{endPoint.Host}:{endPoint.Port}->[{addressArray}]");
+                }
+
+                // 返回测速后的结果
+                foreach (var address in newAddresses)
                 {
                     yield return address;
                 }
             }
-            else
+            finally
             {
-                if (this.dnsEndPointAddress.TryAdd(endPoint, Array.Empty<IPAddress>()))
-                {
-                    await this.persistence.WriteDnsEndPointsAsync(this.dnsEndPointAddress.Keys, cancellationToken);
-                }
-
-                await foreach (var adddress in this.dnsClient.ResolveAsync(endPoint, fastSort: true, cancellationToken))
-                {
-                    yield return adddress;
-                }
+                semaphore.Release();
             }
         }
 
         /// <summary>
-        /// 对所有节点进行测速
+        /// 对所有已缓存的节点进行测速（主要用于主动刷新缓存）
         /// </summary>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
@@ -84,11 +141,11 @@ namespace FastGithub.DomainResolve
         {
             var tasks = new List<Task>();
             
-            // 并行处理所有DNS端点的测速
-            foreach (var keyValue in this.dnsEndPointAddress.OrderBy(item => item.Value.Length))
+            // 只对缓存中存在的DNS端点进行测速
+            foreach (var keyValue in this.speedTestCache.OrderBy(item => item.Value.addresses.Length))
             {
                 var dnsEndPoint = keyValue.Key;
-                var oldAddresses = keyValue.Value;
+                var oldAddresses = keyValue.Value.addresses;
 
                 // 创建异步任务进行测速，但不立即等待
                 tasks.Add(ProcessDnsEndpointAsync(dnsEndPoint, oldAddresses, cancellationToken));
@@ -107,16 +164,103 @@ namespace FastGithub.DomainResolve
         /// <returns></returns>
         private async Task ProcessDnsEndpointAsync(DnsEndPoint dnsEndPoint, IPAddress[] oldAddresses, CancellationToken cancellationToken)
         {
-            var newAddresses = await this.addressService.GetAddressesAsync(dnsEndPoint, oldAddresses, cancellationToken);
-            this.dnsEndPointAddress[dnsEndPoint] = newAddresses;
-
-            var oldSegmentums = oldAddresses.Take(MAX_IP_COUNT);
-            var newSegmentums = newAddresses.Take(MAX_IP_COUNT);
-            if (oldSegmentums.SequenceEqual(newSegmentums) == false)
+            // 获取测速锁以防止重复测速
+            var semaphore = this.speedTestLocks.GetOrAdd(dnsEndPoint, _ => new SemaphoreSlim(1, 1));
+            await semaphore.WaitAsync(cancellationToken);
+            
+            try
             {
-                var addressArray = string.Join(", ", newSegmentums.Select(item => item.ToString()));
-                this.logger.LogInformation($"{dnsEndPoint.Host}:{dnsEndPoint.Port}->[{addressArray}]");
+                var newAddresses = await this.addressService.GetAddressesAsync(dnsEndPoint, oldAddresses, cancellationToken);
+                
+                // 更新缓存
+                var cacheDuration = TimeSpan.FromMinutes(30); // 缓存30分钟
+                this.speedTestCache[dnsEndPoint] = (newAddresses, DateTime.Now, cacheDuration);
+
+                var oldSegmentums = oldAddresses.Take(MAX_IP_COUNT);
+                var newSegmentums = newAddresses.Take(MAX_IP_COUNT);
+                if (oldSegmentums.SequenceEqual(newSegmentums) == false)
+                {
+                    var addressArray = string.Join(", ", newSegmentums.Select(item => item.ToString()));
+                    this.logger.LogInformation($"{dnsEndPoint.Host}:{dnsEndPoint.Port}->[{addressArray}]");
+                }
             }
+            finally
+            {
+                semaphore.Release();
+            }
+        }
+        
+        /// <summary>
+        /// 强制刷新指定端点的测速缓存
+        /// </summary>
+        /// <param name="endPoint"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        public async Task RefreshCacheAsync(DnsEndPoint endPoint, CancellationToken cancellationToken)
+        {
+            // 获取测速锁以防止重复测速
+            var semaphore = this.speedTestLocks.GetOrAdd(endPoint, _ => new SemaphoreSlim(1, 1));
+            await semaphore.WaitAsync(cancellationToken);
+            
+            try
+            {
+                var oldAddresses = this.speedTestCache.TryGetValue(endPoint, out var oldResult) ? oldResult.addresses : Array.Empty<IPAddress>();
+                var newAddresses = await this.addressService.GetAddressesAsync(endPoint, oldAddresses, cancellationToken);
+                
+                // 更新缓存
+                var cacheDuration = TimeSpan.FromMinutes(30); // 缓存30分钟
+                this.speedTestCache[endPoint] = (newAddresses, DateTime.Now, cacheDuration);
+
+                var oldSegmentums = oldAddresses.Take(MAX_IP_COUNT);
+                var newSegmentums = newAddresses.Take(MAX_IP_COUNT);
+                if (oldSegmentums.SequenceEqual(newSegmentums) == false)
+                {
+                    var addressArray = string.Join(", ", newSegmentums.Select(item => item.ToString()));
+                    this.logger.LogInformation($"{endPoint.Host}:{endPoint.Port}->[{addressArray}]");
+                }
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }
+        
+        /// <summary>
+        /// 清理过期的缓存项
+        /// </summary>
+        /// <param name="maxCacheAge">最大缓存时间，超过此时间的缓存将被清理</param>
+        public void CleanupExpiredCache(TimeSpan maxCacheAge)
+        {
+            var now = DateTime.Now;
+            var expiredKeys = new List<DnsEndPoint>();
+            
+            foreach (var kvp in this.speedTestCache)
+            {
+                var (addresses, lastUpdateTime, cacheDuration) = kvp.Value;
+                
+                // 如果缓存时间超过最大缓存时间，则标记为过期
+                if (now.Subtract(lastUpdateTime) > maxCacheAge)
+                {
+                    expiredKeys.Add(kvp.Key);
+                }
+            }
+            
+            // 移除过期的缓存项
+            foreach (var key in expiredKeys)
+            {
+                this.speedTestCache.TryRemove(key, out _);
+                this.logger.LogDebug($"已清理过期缓存: {key.Host}:{key.Port}");
+            }
+        }
+        
+        /// <summary>
+        /// 清理所有缓存
+        /// </summary>
+        public void ClearAllCache()
+        {
+            var count = this.speedTestCache.Count;
+            this.speedTestCache.Clear();
+            this.logger.LogDebug($"已清理所有缓存，共 {count} 项");
         }
     }
 }

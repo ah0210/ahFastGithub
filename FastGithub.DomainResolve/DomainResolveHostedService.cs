@@ -15,7 +15,7 @@ namespace FastGithub.DomainResolve
         private readonly IDomainResolver domainResolver;
         private readonly ILogger<DomainResolveHostedService> logger;
         private readonly TimeSpan dnscryptProxyInitDelay = TimeSpan.FromSeconds(5d);
-        private readonly TimeSpan testPeriodTimeSpan = TimeSpan.FromMinutes(1d);
+        private readonly TimeSpan testPeriodTimeSpan = TimeSpan.FromHours(1d); // 改为每小时进行一次主动刷新，主要依赖按需测速
 
         /// <summary>
         /// 域名解析后台服务
