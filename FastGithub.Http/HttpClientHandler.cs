@@ -115,6 +115,41 @@ namespace FastGithub.Http
                 }
             }
 
+            // 如果连接失败，尝试清除该域名的缓存并重新测速
+            try
+            {
+                // 尝试强制刷新该域名的测速缓存
+                await this.domainResolver.RefreshCacheAsync(context.DnsEndPoint, cancellationToken);
+                
+                // 重新获取IP端点并尝试连接
+                innerExceptions.Clear(); // 清空之前的异常
+                var refreshedIpEndPoints = this.GetIPEndPointsAsync(context.DnsEndPoint, cancellationToken);
+
+                await foreach (var ipEndPoint in refreshedIpEndPoints)
+                {
+                    try
+                    {
+                        using var timeoutTokenSource = new CancellationTokenSource(this.connectTimeout);
+                        using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(timeoutTokenSource.Token, cancellationToken);
+                        return await this.ConnectAsync(context, ipEndPoint, linkedTokenSource.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        innerExceptions.Add(new HttpConnectTimeoutException(ipEndPoint.Address));
+                    }
+                    catch (Exception ex)
+                    {
+                        innerExceptions.Add(ex);
+                    }
+                }
+            }
+            catch (Exception refreshEx)
+            {
+                // 记录刷新缓存时的异常，但继续尝试连接
+                System.Diagnostics.Debug.WriteLine($"刷新域名缓存失败: {refreshEx.Message}");
+            }
+
             throw new AggregateException("找不到任何可成功连接的IP", innerExceptions);
         }
 

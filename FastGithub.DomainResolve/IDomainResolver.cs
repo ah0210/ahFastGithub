@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,5 +24,13 @@ namespace FastGithub.DomainResolve
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         Task TestSpeedAsync(CancellationToken cancellationToken = default);
+        
+        /// <summary>
+        /// 强制刷新指定端点的测速缓存
+        /// </summary>
+        /// <param name="endPoint"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        Task RefreshCacheAsync(DnsEndPoint endPoint, CancellationToken cancellationToken = default);
     }
 }
