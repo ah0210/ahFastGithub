@@ -185,9 +185,9 @@ namespace FastGithub.Http
             // 验证证书有效性
             bool ValidateServerCertificate(object sender, X509Certificate? cert, X509Chain? chain, SslPolicyErrors errors)
             {
-                // 对于 GitHub 相关域名，完全信任证书
                 var domain = context.DnsEndPoint.Host;
-                if (domain.EndsWith(".github.com") || domain == "github.com" || domain.EndsWith(".githubusercontent.com") || domain == "collector.github.com")
+                if (domain.EndsWith(".github.com") || domain == "github.com" || domain.EndsWith(".githubusercontent.com") || domain == "collector.github.com" ||
+                    domain.EndsWith(".huggingface.co") || domain == "huggingface.co")
                 {
                     return true;
                 }
