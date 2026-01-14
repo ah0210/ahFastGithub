@@ -7,9 +7,13 @@ github加速神器，解决github打不开、用户头像无法加载、releases
 * 自己修改了一下，升级到 .net10
 * https://dotnet.microsoft.com/zh-cn/
 * 下载安装最新  .net10
-我需要先了解项目的基本结构，查看项目的目录结构和关键文件，以便分析其实现原理。
-        
-            
+
+代理网站修改：
+FastGithub\appsettings\appsettings.github.json
+
+配置修改：
+FastGithub\appsettings.json
+
 toolName: view_folder
             
 status: success
