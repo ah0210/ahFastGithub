@@ -79,6 +79,23 @@ namespace FastGithub.DomainResolve
                 return;
             }
 
+            if (OperatingSystem.IsLinux())
+            {
+                try
+                {
+                    var mode = File.GetUnixFileMode(this.exeFilePath);
+                    var desired = mode | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+                    if (desired != mode)
+                    {
+                        File.SetUnixFileMode(this.exeFilePath, desired);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    this.logger.LogWarning($"{this.processName}可执行权限设置失败：{ex.Message}");
+                }
+            }
+
             var port = GlobalListener.GetAvailablePort(5533);
             var localEndPoint = new IPEndPoint(IPAddress.Loopback, port);
 

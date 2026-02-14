@@ -137,11 +137,11 @@ echo ==================================================
 echo Updating dnscrypt-proxy.toml to enable IPv6...
 echo ==================================================
 if exist "%linuxx64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml" (
-    powershell -Command "(Get-Content '%linuxx64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml' -replace 'ipv6_servers = false', 'ipv6_servers = true' | Set-Content '%linuxx64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml'"
+    powershell -Command "(Get-Content '%linuxx64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml' -Raw) -replace 'ipv6_servers = false', 'ipv6_servers = true' | Set-Content '%linuxx64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml'"
     echo Updated IPv6 setting in Linux x64 with DNSCrypt-Proxy
 )
 if exist "%linuxarm64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml" (
-    powershell -Command "(Get-Content '%linuxarm64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml' -replace 'ipv6_servers = false', 'ipv6_servers = true' | Set-Content '%linuxarm64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml'"
+    powershell -Command "(Get-Content '%linuxarm64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml' -Raw) -replace 'ipv6_servers = false', 'ipv6_servers = true' | Set-Content '%linuxarm64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml'"
     echo Updated IPv6 setting in Linux ARM64 with DNSCrypt-Proxy
 )
 

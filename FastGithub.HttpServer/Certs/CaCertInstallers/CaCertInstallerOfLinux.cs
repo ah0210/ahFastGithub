@@ -1,4 +1,4 @@
-﻿using FastGithub;
+using FastGithub;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
@@ -53,7 +53,7 @@ namespace FastGithub.HttpServer.Certs.CaCertInstallers
 
             if (geteuid() != 0)
             {
-                logger.LogWarning($"无法自动安装CA证书{caCertFilePath}：没有root权限");
+                logger.LogWarning($"无法自动安装CA证书{caCertFilePath}：没有root权限，请使用sudo运行或手动将证书拷贝到{CaCertStorePath}并执行{CaCertUpdatePath}");
                 return;
             }
 
