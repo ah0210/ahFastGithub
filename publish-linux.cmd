@@ -1,41 +1,26 @@
 @echo off
 setlocal enabledelayedexpansion
 
+for /f %%v in ('powershell -NoProfile -Command "(Select-Xml -Path \"Directory.Build.props\" -XPath \"/Project/PropertyGroup/Version\").Node.InnerText"') do set version=%%v
+if "%version%"=="" set version=0.0.0
+
 echo.
 echo ================================================
 echo    FastGithub Linux Publish Script
-echo    Version 1.0.0
+echo    Version %version%
 echo ================================================
 echo.
 
 REM Set output directories
-set output=./publish
+set output=./publish/%version%
 set linuxx64_with_dnscrypt=%output%/fastgithub_linux-x64_with_dnscrypt
 set linuxx64_without_dnscrypt=%output%/fastgithub_linux-x64_without_dnscrypt
 set linuxarm64_with_dnscrypt=%output%/fastgithub_linux-arm64_with_dnscrypt
 set linuxarm64_without_dnscrypt=%output%/fastgithub_linux-arm64_without_dnscrypt
 
-REM Clean old output directory
-echo Cleaning old output directory...
-if exist "%linuxx64_with_dnscrypt%" (
-    echo Deleting %linuxx64_with_dnscrypt% directory
-    rd /S /Q "%linuxx64_with_dnscrypt%"
-)
-if exist "%linuxx64_without_dnscrypt%" (
-    echo Deleting %linuxx64_without_dnscrypt% directory
-    rd /S /Q "%linuxx64_without_dnscrypt%"
-)
-if exist "%linuxarm64_with_dnscrypt%" (
-    echo Deleting %linuxarm64_with_dnscrypt% directory
-    rd /S /Q "%linuxarm64_with_dnscrypt%"
-)
-if exist "%linuxarm64_without_dnscrypt%" (
-    echo Deleting %linuxarm64_without_dnscrypt% directory
-    rd /S /Q "%linuxarm64_without_dnscrypt%"
-)
-
 REM Create output directories
 echo Creating output directories...
+if not exist "%output%" mkdir "%output%"
 mkdir "%linuxx64_with_dnscrypt%"
 mkdir "%linuxx64_without_dnscrypt%"
 mkdir "%linuxarm64_with_dnscrypt%"
@@ -173,5 +158,16 @@ echo To use on Ubuntu/Linux:
 echo   1. Extract the directory to your desired location
 echo   2. Run: chmod +x fastgithub
 echo   3. Run: ./fastgithub
+echo.
+echo Creating versioned zip packages...
+powershell -Command "Compress-Archive -Path '%linuxx64_with_dnscrypt%' -DestinationPath '%output%/fastgithub_linux-x64_with_dnscrypt_v%version%.zip' -Force"
+powershell -Command "Compress-Archive -Path '%linuxx64_without_dnscrypt%' -DestinationPath '%output%/fastgithub_linux-x64_without_dnscrypt_v%version%.zip' -Force"
+powershell -Command "Compress-Archive -Path '%linuxarm64_with_dnscrypt%' -DestinationPath '%output%/fastgithub_linux-arm64_with_dnscrypt_v%version%.zip' -Force"
+powershell -Command "Compress-Archive -Path '%linuxarm64_without_dnscrypt%' -DestinationPath '%output%/fastgithub_linux-arm64_without_dnscrypt_v%version%.zip' -Force"
+echo Zip packages:
+echo   %output%/fastgithub_linux-x64_with_dnscrypt_v%version%.zip
+echo   %output%/fastgithub_linux-x64_without_dnscrypt_v%version%.zip
+echo   %output%/fastgithub_linux-arm64_with_dnscrypt_v%version%.zip
+echo   %output%/fastgithub_linux-arm64_without_dnscrypt_v%version%.zip
 echo.
 pause

@@ -1,15 +1,18 @@
 @echo off
 setlocal enabledelayedexpansion
 
+for /f %%v in ('powershell -NoProfile -Command "(Select-Xml -Path \"Directory.Build.props\" -XPath \"/Project/PropertyGroup/Version\").Node.InnerText"') do set version=%%v
+if "%version%"=="" set version=0.0.0
+
 echo.
 echo ================================================
 echo    FastGithub Unified Publish Script
-echo    Version 2.3.0
+echo    Version %version%
 echo ================================================
 echo.
 
 REM Set output directories
-set output=./publish
+set output=./publish/%version%
 set winx64_with_dnscrypt=%output%/fastgithub_win-x64_with_dnscrypt
 set winx64_without_dnscrypt=%output%/fastgithub_win-x64_without_dnscrypt
 set linuxx64_with_dnscrypt=%output%/fastgithub_linux-x64_with_dnscrypt
@@ -30,6 +33,7 @@ if exist "%output%" (
 
 REM Create output directories
 echo Creating output directories...
+if not exist "%output%" mkdir "%output%"
 mkdir "%winx64_with_dnscrypt%"
 mkdir "%winx64_without_dnscrypt%"
 mkdir "%linuxx64_with_dnscrypt%"

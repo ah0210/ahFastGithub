@@ -20,6 +20,15 @@ namespace FastGithub.UI
             InitializeComponent();
 
             var contextMenuStrip = new System.Windows.Forms.ContextMenuStrip();
+            var supportItem = contextMenuStrip.Items.Add("升级支持");
+            supportItem.Click += (s, e) =>
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "https://www.17you.com",
+                    UseShellExecute = true
+                });
+            };
             var exitItem = contextMenuStrip.Items.Add("关闭应用(&C)");
             exitItem.Click += (s, e) => this.Close();
 

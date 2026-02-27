@@ -1,7 +1,9 @@
-﻿using System;
+using System;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Navigation;
 
 namespace FastGithub.UI
 {
@@ -16,6 +18,7 @@ namespace FastGithub.UI
 
             this.NavigateIssueHtml();
             this.webBrowser.AddHandler(KeyDownEvent, new RoutedEventHandler(WebBrowser_KeyDown), true);
+            this.webBrowser.Navigating += WebBrowser_Navigating;
         }
 
         /// <summary>
@@ -41,6 +44,25 @@ namespace FastGithub.UI
             }
             catch (Exception)
             {
+            }
+        }
+
+        private void WebBrowser_Navigating(object sender, NavigatingCancelEventArgs e)
+        {
+            var uri = e.Uri;
+            if (uri == null)
+            {
+                return;
+            }
+
+            if (uri.IsAbsoluteUri && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = uri.AbsoluteUri,
+                    UseShellExecute = true
+                });
+                e.Cancel = true;
             }
         }
     }
