@@ -23,14 +23,14 @@ namespace FastGithub
     public static class KestrelServerExtensions
     {
         /// <summary>
-        /// 无限制
+        /// 设置合理的请求体限制，防止慢速攻击
         /// </summary>
         /// <param name="kestrel"></param>
-        public static void NoLimit(this KestrelServerOptions kestrel)
+        public static void SetReasonableLimits(this KestrelServerOptions kestrel)
         {
-            kestrel.Limits.MaxRequestBodySize = null;
-            kestrel.Limits.MinResponseDataRate = null;
-            kestrel.Limits.MinRequestBodyDataRate = null;
+            kestrel.Limits.MaxRequestBodySize = 100 * 1024 * 1024; // 100MB
+            kestrel.Limits.MinResponseDataRate = new MinDataRate(bytesPerSecond: 100, gracePeriod: TimeSpan.FromSeconds(5));
+            kestrel.Limits.MinRequestBodyDataRate = new MinDataRate(bytesPerSecond: 100, gracePeriod: TimeSpan.FromSeconds(5));
         }
 
         /// <summary>

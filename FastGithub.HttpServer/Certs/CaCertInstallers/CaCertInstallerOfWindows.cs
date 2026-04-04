@@ -30,7 +30,7 @@ namespace FastGithub.HttpServer.Certs.CaCertInstallers
         {
             try
             {
-                using var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
+                using var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
                 store.Open(OpenFlags.ReadWrite);
 
                 var caCert = new X509Certificate2(caCertFilePath);

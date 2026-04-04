@@ -27,7 +27,7 @@ namespace FastGithub.HttpServer.Certs
             X500DistinguishedName subjectName,
             DateTimeOffset notBefore,
             DateTimeOffset notAfter,
-            int rsaKeySizeInBits = 2048,
+            int rsaKeySizeInBits = 4096,
             int pathLengthConstraint = 1)
         {
             using var rsa = RSA.Create(rsaKeySizeInBits);
@@ -69,7 +69,7 @@ namespace FastGithub.HttpServer.Certs
             IEnumerable<string>? extraDnsNames = default,
             DateTimeOffset? notBefore = default,
             DateTimeOffset? notAfter = default,
-            int rsaKeySizeInBits = 2048)
+            int rsaKeySizeInBits = 4096)
         {
             using var rsa = RSA.Create(rsaKeySizeInBits);
             var request = new CertificateRequest(subjectName, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);

@@ -42,7 +42,7 @@ namespace FastGithub
             builder.WebHost.UseShutdownTimeout(TimeSpan.FromSeconds(1d));
             builder.WebHost.UseKestrel(kestrel =>
             {
-                kestrel.NoLimit();
+                kestrel.SetReasonableLimits();
                 if (OperatingSystem.IsWindows())
                 {
                     kestrel.ListenHttpsReverseProxy();

@@ -46,6 +46,13 @@ namespace FastGithub.HttpServer.TcpMiddlewares
         /// <returns></returns>
         public async Task InvokeAsync(ConnectionDelegate next, ConnectionContext context)
         {
+            var remoteAddress = (context.RemoteEndPoint as IPEndPoint)?.Address;
+            if (remoteAddress != null && IsLocalhost(remoteAddress) == false)
+            {
+                context.Abort();
+                return;
+            }
+
             var proxyFeature = context.Features.Get<IHttpProxyFeature>();
             if (proxyFeature == null || // 非代理
                 proxyFeature.ProxyProtocol != ProxyProtocol.TunnelProxy || //非隧道代理
@@ -81,6 +88,12 @@ namespace FastGithub.HttpServer.TcpMiddlewares
             var innerExceptions = new List<Exception>();
             await foreach (var endPoint in this.GetUpstreamEndPointsAsync(host, cancellationToken))
             {
+                if (endPoint is IPEndPoint ipEndPoint && IsPrivateAddress(ipEndPoint.Address))
+                {
+                    innerExceptions.Add(new InvalidOperationException($"拒绝连接到内网地址: {ipEndPoint.Address}"));
+                    continue;
+                }
+
                 var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
                 try
                 {
@@ -127,6 +140,40 @@ namespace FastGithub.HttpServer.TcpMiddlewares
                     yield return new IPEndPoint(item, targetPort);
                 }
             }
+        }
+
+        private static bool IsLocalhost(IPAddress address)
+        {
+            return IPAddress.IsLoopback(address);
+        }
+
+        private static bool IsPrivateAddress(IPAddress address)
+        {
+            if (IPAddress.IsLoopback(address))
+                return true;
+
+            var bytes = address.GetAddressBytes();
+            if (address.IsIPv4MappedToIPv6)
+            {
+                var ipv4 = address.MapToIPv4().GetAddressBytes();
+                return IsPrivateIPv4(ipv4);
+            }
+
+            if (bytes.Length == 4)
+            {
+                return IsPrivateIPv4(bytes);
+            }
+
+            return address.IsIPv6LinkLocal || address.IsIPv6SiteLocal;
+        }
+
+        private static bool IsPrivateIPv4(byte[] bytes)
+        {
+            return bytes[0] == 10 ||
+                   (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+                   (bytes[0] == 192 && bytes[1] == 168) ||
+                   (bytes[0] == 127) ||
+                   (bytes[0] == 169 && bytes[1] == 254);
         }
     }
 }

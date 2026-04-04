@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -6,15 +6,14 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Principal;
 using System.Text;
 
 namespace FastGithub.HttpServer.Certs
 {
-    /// <summary>
-    /// 证书服务
-    /// </summary>
     sealed class CertService
     {
         private const string CACERT_PATH = "cacert";
@@ -23,23 +22,10 @@ namespace FastGithub.HttpServer.Certs
         private readonly ILogger<CertService> logger;
         private X509Certificate2? caCert;
 
-
-        /// <summary>
-        /// 获取证书文件路径
-        /// </summary>
         public string CaCerFilePath { get; } = OperatingSystem.IsLinux() ? $"{CACERT_PATH}/fastgithub.crt" : $"{CACERT_PATH}/fastgithub.cer";
 
-        /// <summary>
-        /// 获取私钥文件路径
-        /// </summary>
         public string CaKeyFilePath { get; } = $"{CACERT_PATH}/fastgithub.key";
 
-        /// <summary>
-        /// 证书服务
-        /// </summary>
-        /// <param name="serverCertCache"></param>
-        /// <param name="certInstallers"></param>
-        /// <param name="logger"></param>
         public CertService(
             IMemoryCache serverCertCache,
             IEnumerable<ICaCertInstaller> certInstallers,
@@ -51,9 +37,6 @@ namespace FastGithub.HttpServer.Certs
             Directory.CreateDirectory(CACERT_PATH);
         }
 
-        /// <summary>
-        /// 生成CA证书
-        /// </summary> 
         public bool CreateCaCertIfNotExists()
         {
             if (File.Exists(this.CaCerFilePath) && File.Exists(this.CaKeyFilePath))
@@ -65,13 +48,18 @@ namespace FastGithub.HttpServer.Certs
             File.Delete(this.CaKeyFilePath);
 
             var notBefore = DateTimeOffset.Now.AddDays(-1);
-            var notAfter = DateTimeOffset.Now.AddYears(10);
+            var notAfter = DateTimeOffset.Now.AddYears(2);
 
             var subjectName = new X500DistinguishedName($"CN={nameof(FastGithub)}");
             this.caCert = CertGenerator.CreateCACertificate(subjectName, notBefore, notAfter);
 
             var privateKeyPem = this.caCert.GetRSAPrivateKey()?.ExportRSAPrivateKeyPem();
-            File.WriteAllText(this.CaKeyFilePath, new string(privateKeyPem), Encoding.ASCII);
+            var privateKeyBytes = Encoding.ASCII.GetBytes(new string(privateKeyPem));
+
+            var encryptedKey = EncryptKey(privateKeyBytes);
+            File.WriteAllBytes(this.CaKeyFilePath, encryptedKey);
+
+            RestrictKeyFilePermissions(this.CaKeyFilePath);
 
             var certPem = this.caCert.ExportCertificatePem();
             File.WriteAllText(this.CaCerFilePath, new string(certPem), Encoding.ASCII);
@@ -79,9 +67,88 @@ namespace FastGithub.HttpServer.Certs
             return true;
         }
 
-        /// <summary>
-        /// 安装和信任CA证书
-        /// </summary> 
+        private static byte[] EncryptKey(byte[] plainBytes)
+        {
+            using var aes = Aes.Create();
+            aes.Key = DeriveKey();
+            aes.IV = new byte[16];
+            using var encryptor = aes.CreateEncryptor();
+            using var ms = new MemoryStream();
+            ms.Write(aes.IV, 0, aes.IV.Length);
+            using var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write);
+            cs.Write(plainBytes, 0, plainBytes.Length);
+            cs.FlushFinalBlock();
+            return ms.ToArray();
+        }
+
+        private static byte[] DecryptKey(byte[] encryptedBytes)
+        {
+            using var aes = Aes.Create();
+            aes.Key = DeriveKey();
+            var iv = new byte[16];
+            Array.Copy(encryptedBytes, 0, iv, 0, 16);
+            aes.IV = iv;
+            using var decryptor = aes.CreateDecryptor();
+            using var ms = new MemoryStream(encryptedBytes, 16, encryptedBytes.Length - 16);
+            using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
+            using var output = new MemoryStream();
+            cs.CopyTo(output);
+            return output.ToArray();
+        }
+
+        private static byte[] DeriveKey()
+        {
+            var machineName = Encoding.UTF8.GetBytes(Environment.MachineName);
+            var userName = Encoding.UTF8.GetBytes(Environment.UserName);
+            using var sha256 = SHA256.Create();
+            var combined = new byte[machineName.Length + userName.Length];
+            Buffer.BlockCopy(machineName, 0, combined, 0, machineName.Length);
+            Buffer.BlockCopy(userName, 0, combined, machineName.Length, userName.Length);
+            return sha256.ComputeHash(combined);
+        }
+
+        private static void RestrictKeyFilePermissions(string filePath)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(filePath);
+                    var accessControl = fileInfo.GetAccessControl();
+                    accessControl.SetAccessRuleProtection(true, false);
+                    var currentUser = WindowsIdentity.GetCurrent();
+                    if (currentUser.User != null)
+                    {
+                        var rule = new FileSystemAccessRule(
+                            currentUser.User,
+                            FileSystemRights.Read,
+                            AccessControlType.Allow);
+                        accessControl.AddAccessRule(rule);
+                    }
+                    fileInfo.SetAccessControl(accessControl);
+                }
+                catch (Exception)
+                {
+                }
+            }
+            else
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "chmod",
+                        Arguments = $"600 {filePath}",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
         public void InstallAndTrustCaCert()
         {
             var installer = this.certInstallers.FirstOrDefault(item => item.IsSupported());
@@ -94,45 +161,48 @@ namespace FastGithub.HttpServer.Certs
                 this.logger.LogWarning($"请根据你的系统平台手动安装和信任CA证书{this.CaCerFilePath}");
             }
 
-            GitConfigSslverify(false);
+            GitConfigSslverifyForGitHub();
         }
 
-        /// <summary>
-        /// 设置ssl验证
-        /// </summary>
-        /// <param name="value">是否验证</param>
-        /// <returns></returns>
-        public static bool GitConfigSslverify(bool value)
+        public static void GitConfigSslverifyForGitHub()
         {
-            try
+            var githubUrls = new[]
             {
-                Process.Start(new ProcessStartInfo
+                "http.https://github.com/.sslCAInfo",
+                "http.https://gist.github.com/.sslCAInfo",
+                "http.https://api.github.com/.sslCAInfo"
+            };
+
+            var certPath = Path.Combine(Path.GetFullPath(CACERT_PATH), OperatingSystem.IsLinux() ? "fastgithub.crt" : "fastgithub.cer");
+
+            foreach (var url in githubUrls)
+            {
+                try
                 {
-                    FileName = "git",
-                    Arguments = $"config --global http.sslverify {value.ToString().ToLower()}",
-                    UseShellExecute = true,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden
-                });
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "git",
+                        Arguments = $"config --global {url} \"{certPath}\"",
+                        UseShellExecute = true,
+                        CreateNoWindow = true,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    });
+                }
+                catch (Exception)
+                {
+                }
             }
         }
 
-        /// <summary>
-        /// 获取颁发给指定域名的证书
-        /// </summary>
-        /// <param name="domain"></param> 
-        /// <returns></returns>
         public X509Certificate2 GetOrCreateServerCert(string? domain)
         {
             if (this.caCert == null)
             {
+                var protectedKey = File.ReadAllBytes(this.CaKeyFilePath);
+                var privateKeyPem = Encoding.ASCII.GetString(DecryptKey(protectedKey));
+
                 using var rsa = RSA.Create();
-                rsa.ImportFromPem(File.ReadAllText(this.CaKeyFilePath));
+                rsa.ImportFromPem(privateKeyPem);
                 this.caCert = new X509Certificate2(this.CaCerFilePath).CopyWithPrivateKey(rsa);
             }
 
@@ -140,7 +210,6 @@ namespace FastGithub.HttpServer.Certs
             var endCert = this.serverCertCache.GetOrCreate(key, GetOrCreateCert);
             return endCert!;
 
-            // 生成域名的1年证书
             X509Certificate2 GetOrCreateCert(ICacheEntry entry)
             {
                 var notBefore = DateTimeOffset.Now.AddDays(-1);
@@ -152,16 +221,10 @@ namespace FastGithub.HttpServer.Certs
                 var subjectName = new X500DistinguishedName($"CN={domain}");
                 var endCert = CertGenerator.CreateEndCertificate(this.caCert, subjectName, extraDomains, notBefore, notAfter);
 
-                // 重新初始化证书，以兼容win平台不能使用内存证书
                 return new X509Certificate2(endCert.Export(X509ContentType.Pfx));
             }
         }
 
-        /// <summary>
-        /// 获取域名
-        /// </summary>
-        /// <param name="domain"></param>
-        /// <returns></returns>
         private static IEnumerable<string> GetExtraDomains()
         {
             yield return Environment.MachineName;

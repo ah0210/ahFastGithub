@@ -1,10 +1,8 @@
-using FastGithub;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 
 namespace FastGithub.HttpServer.Certs.CaCertInstallers
 {
@@ -21,9 +19,6 @@ namespace FastGithub.HttpServer.Certs.CaCertInstallers
         /// 证书根目录
         /// </summary>
         protected abstract string CaCertStorePath { get; }
-
-        [DllImport("libc", SetLastError = true)]
-        private static extern uint geteuid();
 
         public CaCertInstallerOfLinux(ILogger logger)
         {
@@ -45,28 +40,28 @@ namespace FastGithub.HttpServer.Certs.CaCertInstallers
         /// <param name="caCertFilePath">证书文件路径</param>
         public void Install(string caCertFilePath)
         {
-            var destCertFilePath = Path.Combine(CaCertStorePath, Path.GetFileName(caCertFilePath));
+            var userCertDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "ca-certificates");
+            var destCertFilePath = Path.Combine(userCertDir, Path.GetFileName(caCertFilePath));
             if (File.Exists(destCertFilePath) && File.ReadAllBytes(caCertFilePath).SequenceEqual(File.ReadAllBytes(destCertFilePath)))
             {
                 return;
             }
 
-            if (geteuid() != 0)
-            {
-                logger.LogWarning($"无法自动安装CA证书{caCertFilePath}：没有root权限，请使用sudo运行或手动将证书拷贝到{CaCertStorePath}并执行{CaCertUpdatePath}");
-                return;
-            }
-
             try
             {
-                Directory.CreateDirectory(CaCertStorePath);
-                foreach (var item in Directory.GetFiles(CaCertStorePath, "fastgithub.*"))
+                Directory.CreateDirectory(userCertDir);
+                foreach (var item in Directory.GetFiles(userCertDir, "fastgithub.*"))
                 {
                     File.Delete(item);
                 }
                 File.Copy(caCertFilePath, destCertFilePath, overwrite: true);
-                Process.Start(CaCertUpdatePath).WaitForExit();
-                logger.LogInformation($"已自动向系统安装CA证书{caCertFilePath}");
+
+                if (File.Exists(CaCertUpdatePath))
+                {
+                    Process.Start(CaCertUpdatePath).WaitForExit();
+                }
+
+                logger.LogInformation($"已自动向用户目录安装CA证书{caCertFilePath}");
             }
             catch (Exception ex)
             {

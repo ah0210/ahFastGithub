@@ -11,6 +11,7 @@ FastGithub 2.3.0
 - **按需测速**：只对用户实际访问的域名进行DNS解析和IP测速，提高响应速度 
 - **智能缓存**：测速结果缓存30分钟，有缓存的域名可立即返回最优IP 
 - **资源优化**：减少不必要的网络探测和计算资源消耗 
+- **安全增强**：代理仅允许本地回环访问，CA私钥加密存储，Git证书信任仅限GitHub域名
 
 ## 3 支持平台
 - Windows x64  >=win11 
@@ -73,12 +74,12 @@ FastGithub 2.3.0
 * `fastgithub.exe stop` // 以windows服务卸载并删除
 
 ### 7.3 Linux-x64终端
-* `sudo ./fastgithub`
+* `./fastgithub`
 * 设置系统自动代理为`http://127.0.0.1:38457`，或手动代理http/https为`127.0.0.1:38457`
   
 ### 7.4 Linux-x64服务
-* `sudo ./fastgithub start` // 以systemd服务安装并启动
-* `sudo ./fastgithub stop` // 以systemd服务卸载并删除
+* `./fastgithub start` // 以systemd服务安装并启动
+* `./fastgithub stop` // 以systemd服务卸载并删除
 * 设置系统自动代理为`http://127.0.0.1:38457`，或手动代理http/https为`127.0.0.1:38457`
 
 ### 7.5 macOS-x64
@@ -103,8 +104,21 @@ FastGithub 2.3.0
 
 ## 9 证书验证
 ### 9.1 Git
-git操作提示`SSL certificate problem`</br>
-需要关闭git的证书验证：`git config --global http.sslverify false`
+
+FastGithub 启动时会自动为 GitHub 相关域名配置证书信任（`github.com`、`gist.github.com`、`api.github.com`），无需手动关闭全局 SSL 验证。
+
+如果仍有 `SSL certificate problem` 提示，可选择以下一种方式：
+
+**方式一：仅对 GitHub 禁用 SSL 验证（推荐）**
+```bash
+git config --global http.https://github.com/.sslverify false
+git config --global http.https://gist.github.com/.sslverify false
+```
+
+**方式二：指定 FastGithub 的 CA 证书（更安全）**
+```bash
+git config --global http.https://github.com/.sslCAInfo <path-to-fastgithub>/cacert/fastgithub.cer
+```
 
 ### 9.2 Firefox
 firefox提示`连接有潜在的安全问题`</br>
@@ -114,7 +128,22 @@ firefox提示`连接有潜在的安全问题`</br>
 其他浏览器也需要导入cacert/fastgithub.cer证书并设置信任。
 
 ## 10 安全性说明
-FastGithub为每台不同的主机生成自颁发CA证书，保存在cacert文件夹下。客户端设备需要安装和无条件信任自颁发的CA证书，请不要将证书私钥泄露给他人，以免造成损失。
+
+### 10.1 代理访问限制
+FastGithub 的代理服务仅允许来自本地回环地址（127.0.0.1 / ::1）的连接，拒绝来自局域网或其他外部来源的请求，防止被滥用为开放代理。
+
+### 10.2 CA 私钥保护
+- CA 私钥使用操作系统级别的加密保护（Windows DPAPI / Linux AES 加密）
+- 私钥文件设置了严格的访问权限（Windows ACL / Linux chmod 600）
+- 请勿将 `cacert/` 目录下的文件分享给他人
+
+### 10.3 证书安装范围
+- Windows：CA 证书仅安装到当前用户的信任根存储，不影响其他用户
+- Linux：CA 证书仅安装到用户目录（`~/.local/share/ca-certificates/`），无需 root 权限
+- macOS：需手动安装并设置信任
+
+### 10.4 Git 配置
+FastGithub 仅为 GitHub 域名（`github.com`、`gist.github.com`、`api.github.com`）配置证书信任，不会影响其他 Git 仓库的 SSL 验证。
 
 ## 11 合法性说明
 《国际联网暂行规定》第六条规定："计算机信息网络直接进行国际联网，必须使用邮电部国家公用电信网提供的国际出入口信道。任何单位和个人不得自行建立或者使用其他信道进行国际联网。"

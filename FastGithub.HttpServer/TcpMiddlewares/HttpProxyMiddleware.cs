@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
 using System;
 using System.Buffers;
 using System.IO.Pipelines;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -17,6 +18,7 @@ namespace FastGithub.HttpServer.TcpMiddlewares
         private readonly HttpParser<HttpRequestHandler> httpParser = new();
         private readonly byte[] http200 = Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n");
         private readonly byte[] http400 = Encoding.ASCII.GetBytes("HTTP/1.1 400 Bad Request\r\n\r\n");
+        private readonly byte[] http403 = Encoding.ASCII.GetBytes("HTTP/1.1 403 Forbidden\r\n\r\n");
 
         /// <summary>
         /// 执行中间件
@@ -26,6 +28,15 @@ namespace FastGithub.HttpServer.TcpMiddlewares
         /// <returns></returns>
         public async Task InvokeAsync(ConnectionDelegate next, ConnectionContext context)
         {
+            var remoteAddress = (context.RemoteEndPoint as IPEndPoint)?.Address;
+            if (remoteAddress != null && IsLocalhost(remoteAddress) == false)
+            {
+                var output2 = context.Transport.Output;
+                await output2.WriteAsync(this.http403, context.ConnectionClosed);
+                context.Abort();
+                return;
+            }
+
             var input = context.Transport.Input;
             var output = context.Transport.Output;
             var request = new HttpRequestHandler();
@@ -73,6 +84,14 @@ namespace FastGithub.HttpServer.TcpMiddlewares
                     break;
                 }
             }
+        }
+
+        private static bool IsLocalhost(IPAddress address)
+        {
+            return IPAddress.IsLoopback(address)
+                || IPAddress.IPv6Loopback.Equals(address)
+                || address.Equals(IPAddress.Any)
+                || address.Equals(IPAddress.IPv6Any);
         }
 
 
