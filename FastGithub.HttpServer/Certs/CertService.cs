@@ -107,6 +107,25 @@ namespace FastGithub.HttpServer.Certs
             return sha256.ComputeHash(combined);
         }
 
+        private static bool IsPlainTextKey(byte[] data)
+        {
+            if (data.Length < 27) return false;
+            return data[0] == (byte)'-' &&
+                   data[1] == (byte)'-' &&
+                   data[2] == (byte)'-' &&
+                   data[3] == (byte)'-' &&
+                   data[4] == (byte)'-' &&
+                   data[5] == (byte)'B' &&
+                   data[6] == (byte)'E' &&
+                   data[7] == (byte)'G' &&
+                   data[8] == (byte)'I' &&
+                   data[9] == (byte)'N' &&
+                   data[10] == (byte)' ' &&
+                   data[11] == (byte)'R' &&
+                   data[12] == (byte)'S' &&
+                   data[13] == (byte)'A';
+        }
+
         private static void RestrictKeyFilePermissions(string filePath)
         {
             if (OperatingSystem.IsWindows())
@@ -197,7 +216,18 @@ namespace FastGithub.HttpServer.Certs
             if (this.caCert == null)
             {
                 var protectedKey = File.ReadAllBytes(this.CaKeyFilePath);
-                var privateKeyPem = Encoding.ASCII.GetString(DecryptKey(protectedKey));
+
+                string privateKeyPem;
+                if (IsPlainTextKey(protectedKey))
+                {
+                    privateKeyPem = Encoding.ASCII.GetString(protectedKey);
+                    var reEncrypted = EncryptKey(protectedKey);
+                    File.WriteAllBytes(this.CaKeyFilePath, reEncrypted);
+                }
+                else
+                {
+                    privateKeyPem = Encoding.ASCII.GetString(DecryptKey(protectedKey));
+                }
 
                 using var rsa = RSA.Create();
                 rsa.ImportFromPem(privateKeyPem);
