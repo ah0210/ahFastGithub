@@ -136,24 +136,74 @@ firefox提示`连接有潜在的安全问题`</br>
 ### 9.3 其他浏览器
 其他浏览器也需要导入cacert/fastgithub.cer证书并设置信任。
 
-## 10 安全性说明
+## 10 常见问题
 
-### 10.1 代理访问限制
+### 10.1 浏览器提示"您的连接不是私密连接"（ERR_CERT_AUTHORITY_INVALID）
+
+**原因**：FastGithub 的 CA 证书未被系统信任。
+
+**解决方法**：
+
+**Windows 11 手动安装证书**：
+1. 打开 FastGithub 目录下的 `cacert` 文件夹
+2. 双击 `fastgithub.cer`
+3. 点击 **"安装证书..."**
+4. 存储位置选择 **"当前用户"**，点下一步
+5. 选择 **"将所有的证书都放入下列存储"**，点 **"浏览"**
+6. 选择 **"受信任的根证书颁发机构"**，点确定
+7. 点 **下一步** → **完成**
+8. 弹出安全警告点 **"是"**
+
+**Windows 11 删除旧证书**（如之前安装过旧版）：
+1. `Win + R` 输入 `certmgr.msc` 回车
+2. 展开 **"受信任的根证书颁发机构"** → **"证书"**
+3. 找到颁发给 `FastGithub` 的证书，右键 **删除**
+4. 重启 FastGithub，它会自动重新安装
+
+### 10.2 升级 2.4.0 后证书不生效
+
+**原因**：2.4.0 版本将 CA 私钥从明文格式改为 AES 加密存储。旧版 `cacert/fastgithub.key` 是明文 PEM 格式，新版本会自动检测并兼容迁移。
+
+**解决方法**：
+1. 删除 `cacert` 文件夹（包含旧的 `fastgithub.cer` 和 `fastgithub.key`）
+2. 重新启动 FastGithub，会自动生成新的加密密钥和证书
+3. 按 10.1 步骤重新安装新证书到系统信任存储
+
+### 10.3 Git 操作提示 SSL/TLS 连接失败
+
+**原因**：Git 的 `sslCAInfo` 配置指向了 FastGithub 的自签名 CA，导致 Git 不再信任 GitHub 的真实 CA（如 DigiCert）。
+
+**解决方法**：
+```bash
+# 清除错误的 sslCAInfo 配置
+git config --global --unset http.https://github.com/.sslCAInfo
+git config --global --unset http.https://gist.github.com/.sslCAInfo
+git config --global --unset http.https://api.github.com/.sslCAInfo
+
+# 改为禁用验证（仅针对 GitHub 域名）
+git config --global http.https://github.com/.sslverify false
+git config --global http.https://gist.github.com/.sslverify false
+git config --global http.https://api.github.com/.sslverify false
+```
+
+## 11 安全性说明
+
+### 11.1 代理访问限制
 FastGithub 的代理服务仅允许来自本地回环地址（127.0.0.1 / ::1）的连接，拒绝来自局域网或其他外部来源的请求，防止被滥用为开放代理。
 
-### 10.2 CA 私钥保护
-- CA 私钥使用操作系统级别的加密保护（Windows DPAPI / Linux AES 加密）
+### 11.2 CA 私钥保护
+- CA 私钥使用 AES 加密存储，密钥派生基于机器名和用户名
 - 私钥文件设置了严格的访问权限（Windows ACL / Linux chmod 600）
 - 请勿将 `cacert/` 目录下的文件分享给他人
 
-### 10.3 证书安装范围
+### 11.3 证书安装范围
 - Windows：CA 证书仅安装到当前用户的信任根存储，不影响其他用户
 - Linux：CA 证书仅安装到用户目录（`~/.local/share/ca-certificates/`），无需 root 权限
 - macOS：需手动安装并设置信任
 
-### 10.4 Git 配置
+### 11.4 Git 配置
 FastGithub 仅为 GitHub 域名（`github.com`、`gist.github.com`、`api.github.com`）配置证书信任，不会影响其他 Git 仓库的 SSL 验证。
 
-## 11 合法性说明
+## 12 合法性说明
 《国际联网暂行规定》第六条规定："计算机信息网络直接进行国际联网，必须使用邮电部国家公用电信网提供的国际出入口信道。任何单位和个人不得自行建立或者使用其他信道进行国际联网。"
 FastGithub本地代理使用的都是"公用电信网提供的国际出入口信道"，从国外Github服务器到国内用户电脑上FastGithub程序的流量，使用的是正常流量通道，其间未对流量进行任何额外加密（仅有网页原有的TLS加密，区别于VPN的流量加密），而FastGithub获取到网页数据之后发生的整个代理过程完全在国内，不再适用国际互联网相关之规定。
