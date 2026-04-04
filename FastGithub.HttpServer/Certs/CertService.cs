@@ -168,12 +168,10 @@ namespace FastGithub.HttpServer.Certs
         {
             var githubUrls = new[]
             {
-                "http.https://github.com/.sslCAInfo",
-                "http.https://gist.github.com/.sslCAInfo",
-                "http.https://api.github.com/.sslCAInfo"
+                "http.https://github.com/.sslverify",
+                "http.https://gist.github.com/.sslverify",
+                "http.https://api.github.com/.sslverify"
             };
-
-            var certPath = Path.Combine(Path.GetFullPath(CACERT_PATH), OperatingSystem.IsLinux() ? "fastgithub.crt" : "fastgithub.cer");
 
             foreach (var url in githubUrls)
             {
@@ -182,7 +180,7 @@ namespace FastGithub.HttpServer.Certs
                     Process.Start(new ProcessStartInfo
                     {
                         FileName = "git",
-                        Arguments = $"config --global {url} \"{certPath}\"",
+                        Arguments = $"config --global {url} false",
                         UseShellExecute = true,
                         CreateNoWindow = true,
                         WindowStyle = ProcessWindowStyle.Hidden

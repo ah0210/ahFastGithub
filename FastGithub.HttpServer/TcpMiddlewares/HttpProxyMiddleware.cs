@@ -31,8 +31,14 @@ namespace FastGithub.HttpServer.TcpMiddlewares
             var remoteAddress = (context.RemoteEndPoint as IPEndPoint)?.Address;
             if (remoteAddress != null && IsLocalhost(remoteAddress) == false)
             {
-                var output2 = context.Transport.Output;
-                await output2.WriteAsync(this.http403, context.ConnectionClosed);
+                try
+                {
+                    var output2 = context.Transport.Output;
+                    await output2.WriteAsync(this.http403, context.ConnectionClosed);
+                }
+                catch (Exception)
+                {
+                }
                 context.Abort();
                 return;
             }
@@ -80,7 +86,13 @@ namespace FastGithub.HttpServer.TcpMiddlewares
                 }
                 catch (Exception)
                 {
-                    await output.WriteAsync(this.http400, context.ConnectionClosed);
+                    try
+                    {
+                        await output.WriteAsync(this.http400, context.ConnectionClosed);
+                    }
+                    catch (Exception)
+                    {
+                    }
                     break;
                 }
             }
