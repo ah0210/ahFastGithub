@@ -1,8 +1,11 @@
 using System;
 using System.Diagnostics;
+using System.Drawing;
+using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Media.Imaging;
 
 namespace FastGithub.UI
 {
@@ -18,7 +21,7 @@ namespace FastGithub.UI
             InitializeComponent();
 
             var contextMenuStrip = new System.Windows.Forms.ContextMenuStrip();
-            contextMenuStrip.Font = new System.Drawing.Font("Microsoft YaHei UI", 10F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
+            contextMenuStrip.Font = new System.Drawing.Font("Microsoft YaHei UI", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
             var supportItem = contextMenuStrip.Items.Add("升级支持");
             supportItem.Click += (s, e) =>
             {
@@ -33,12 +36,18 @@ namespace FastGithub.UI
 
             var version = this.GetType().Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
             this.Title = $"{FASTGITHUB_UI} v{version}";
+
+            var icon = LoadAppIcon();
+            if (icon != null)
+            {
+                this.Icon = Imaging.CreateBitmapSourceFromHIcon(icon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            }
             this.notifyIcon = new System.Windows.Forms.NotifyIcon
             {
                 Visible = true,
                 Text = FASTGITHUB_UI,
                 ContextMenuStrip = contextMenuStrip,
-                Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Windows.Forms.Application.ExecutablePath)
+                Icon = icon
             };
 
             this.notifyIcon.MouseClick += (s, e) =>
@@ -52,6 +61,25 @@ namespace FastGithub.UI
             };
         }
 
+
+        private static Icon? LoadAppIcon()
+        {
+            try
+            {
+                var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resource", "githubfast.png");
+                if (File.Exists(iconPath))
+                {
+                    using var bitmap = new Bitmap(iconPath);
+                    var size = new System.Drawing.Size(48, 48);
+                    using var scaled = new Bitmap(bitmap, size);
+                    return System.Drawing.Icon.FromHandle(scaled.GetHicon());
+                }
+            }
+            catch
+            {
+            }
+            return null;
+        }
 
         /// <summary>
         /// 拦截最小化事件
