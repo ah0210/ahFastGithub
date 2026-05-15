@@ -9,7 +9,7 @@ namespace FastGithub.UI
     /// </summary>
     public partial class UdpLogListBox : UserControl
     {
-        private readonly int maxLogCount = 100;
+        private readonly int maxLogCount = 5000;
         public ObservableCollection<UdpLog> LogList { get; } = new ObservableCollection<UdpLog>();
 
         public UdpLogListBox()
