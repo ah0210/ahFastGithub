@@ -16,20 +16,12 @@ using System.Threading.Tasks;
 
 namespace FastGithub.HttpServer.TcpMiddlewares
 {
-    /// <summary>
-    /// 隧道中间件
-    /// </summary>
     sealed class TunnelMiddleware
     {
         private readonly FastGithubConfig fastGithubConfig;
         private readonly IDomainResolver domainResolver;
         private readonly TimeSpan connectTimeout = TimeSpan.FromSeconds(10d);
 
-        /// <summary>
-        /// 隧道中间件
-        /// </summary>
-        /// <param name="fastGithubConfig"></param>
-        /// <param name="domainResolver"></param> 
         public TunnelMiddleware(
             FastGithubConfig fastGithubConfig,
             IDomainResolver domainResolver)
@@ -38,12 +30,6 @@ namespace FastGithub.HttpServer.TcpMiddlewares
             this.domainResolver = domainResolver;
         }
 
-        /// <summary>
-        /// 执行中间件
-        /// </summary>
-        /// <param name="next"></param>
-        /// <param name="context"></param>
-        /// <returns></returns>
         public async Task InvokeAsync(ConnectionDelegate next, ConnectionContext context)
         {
             var remoteAddress = (context.RemoteEndPoint as IPEndPoint)?.Address;
@@ -54,9 +40,9 @@ namespace FastGithub.HttpServer.TcpMiddlewares
             }
 
             var proxyFeature = context.Features.Get<IHttpProxyFeature>();
-            if (proxyFeature == null || // 非代理
-                proxyFeature.ProxyProtocol != ProxyProtocol.TunnelProxy || //非隧道代理
-                context.Features.Get<ITlsConnectionFeature>() != null) // 经过隧道的https
+            if (proxyFeature == null ||
+                proxyFeature.ProxyProtocol != ProxyProtocol.TunnelProxy ||
+                context.Features.Get<ITlsConnectionFeature>() != null)
             {
                 await next(context);
             }
@@ -70,19 +56,35 @@ namespace FastGithub.HttpServer.TcpMiddlewares
 
                     var task1 = connection.CopyToAsync(transport.Output, cancellationToken);
                     var task2 = transport.Input.CopyToAsync(connection, cancellationToken);
-                    await Task.WhenAny(task1, task2);
+                    var completedTask = await Task.WhenAny(task1, task2);
+
+                    // 等待另一个方向完成，同时观察所有任务异常
+                    if (completedTask == task1)
+                    {
+                        await ObserveAsync(task2);
+                    }
+                    else
+                    {
+                        await ObserveAsync(task1);
+                    }
                 }
             }
         }
 
+        private static async Task ObserveAsync(Task task)
+        {
+            try
+            {
+                await task;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception)
+            {
+            }
+        }
 
-        /// <summary>
-        /// 创建连接
-        /// </summary>
-        /// <param name="host"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        /// <exception cref="AggregateException"></exception>
         private async Task<Stream> CreateConnectionAsync(HostString host, CancellationToken cancellationToken)
         {
             var innerExceptions = new List<Exception>();
@@ -112,12 +114,6 @@ namespace FastGithub.HttpServer.TcpMiddlewares
             throw new AggregateException($"无法连接到{host}", innerExceptions);
         }
 
-        /// <summary>
-        /// 获取目标终节点
-        /// </summary>
-        /// <param name="host"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         private async IAsyncEnumerable<EndPoint> GetUpstreamEndPointsAsync(HostString host, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             const int HTTPS_PORT = 443;

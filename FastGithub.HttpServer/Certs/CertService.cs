@@ -17,14 +17,21 @@ namespace FastGithub.HttpServer.Certs
     sealed class CertService
     {
         private const string CACERT_PATH = "cacert";
+        private const string MAGIC = "FGKE";
+        private static readonly byte[] MagicBytes = Encoding.ASCII.GetBytes(MAGIC);
+        private const int FORMAT_VERSION = 1;
+        private const int SALT_SIZE = 16;
+        private const int IV_SIZE = 16;
+        private const int PBKDF2_ITERATIONS = 600000;
+
         private readonly IMemoryCache serverCertCache;
         private readonly IEnumerable<ICaCertInstaller> certInstallers;
         private readonly ILogger<CertService> logger;
         private X509Certificate2? caCert;
 
-        public string CaCerFilePath { get; } = OperatingSystem.IsLinux() ? $"{CACERT_PATH}/fastgithub.crt" : $"{CACERT_PATH}/fastgithub.cer";
+        public string CaCerFilePath { get; } = Path.Combine(CACERT_PATH, OperatingSystem.IsLinux() ? "fastgithub.crt" : "fastgithub.cer");
 
-        public string CaKeyFilePath { get; } = $"{CACERT_PATH}/fastgithub.key";
+        public string CaKeyFilePath { get; } = Path.Combine(CACERT_PATH, "fastgithub.key");
 
         public CertService(
             IMemoryCache serverCertCache,
@@ -69,11 +76,17 @@ namespace FastGithub.HttpServer.Certs
 
         private static byte[] EncryptKey(byte[] plainBytes)
         {
+            var salt = RandomNumberGenerator.GetBytes(SALT_SIZE);
+            var key = DeriveKey(salt);
             using var aes = Aes.Create();
-            aes.Key = DeriveKey();
-            aes.IV = new byte[16];
+            aes.Key = key;
+            aes.GenerateIV();
+
             using var encryptor = aes.CreateEncryptor();
             using var ms = new MemoryStream();
+            ms.Write(MagicBytes, 0, MagicBytes.Length);
+            ms.WriteByte(FORMAT_VERSION);
+            ms.Write(salt, 0, salt.Length);
             ms.Write(aes.IV, 0, aes.IV.Length);
             using var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write);
             cs.Write(plainBytes, 0, plainBytes.Length);
@@ -83,20 +96,62 @@ namespace FastGithub.HttpServer.Certs
 
         private static byte[] DecryptKey(byte[] encryptedBytes)
         {
-            using var aes = Aes.Create();
-            aes.Key = DeriveKey();
-            var iv = new byte[16];
-            Array.Copy(encryptedBytes, 0, iv, 0, 16);
-            aes.IV = iv;
-            using var decryptor = aes.CreateDecryptor();
-            using var ms = new MemoryStream(encryptedBytes, 16, encryptedBytes.Length - 16);
-            using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
-            using var output = new MemoryStream();
-            cs.CopyTo(output);
-            return output.ToArray();
+            var offset = 0;
+            if (HasNewFormatHeader(encryptedBytes))
+            {
+                offset = MagicBytes.Length + 1;
+                var salt = new byte[SALT_SIZE];
+                Buffer.BlockCopy(encryptedBytes, offset, salt, 0, SALT_SIZE);
+                offset += SALT_SIZE;
+                var iv = new byte[IV_SIZE];
+                Buffer.BlockCopy(encryptedBytes, offset, iv, 0, IV_SIZE);
+                offset += IV_SIZE;
+
+                using var aes = Aes.Create();
+                aes.Key = DeriveKey(salt);
+                aes.IV = iv;
+                using var decryptor = aes.CreateDecryptor();
+                using var ms = new MemoryStream(encryptedBytes, offset, encryptedBytes.Length - offset);
+                using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
+                using var output = new MemoryStream();
+                cs.CopyTo(output);
+                return output.ToArray();
+            }
+            else
+            {
+                using var aes = Aes.Create();
+                aes.Key = DeriveLegacyKey();
+                var iv = new byte[16];
+                Buffer.BlockCopy(encryptedBytes, 0, iv, 0, 16);
+                aes.IV = iv;
+                using var decryptor = aes.CreateDecryptor();
+                using var ms = new MemoryStream(encryptedBytes, 16, encryptedBytes.Length - 16);
+                using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
+                using var output = new MemoryStream();
+                cs.CopyTo(output);
+                return output.ToArray();
+            }
         }
 
-        private static byte[] DeriveKey()
+        private static bool HasNewFormatHeader(byte[] data)
+        {
+            if (data.Length < MagicBytes.Length + 1)
+                return false;
+            for (var i = 0; i < MagicBytes.Length; i++)
+            {
+                if (data[i] != MagicBytes[i])
+                    return false;
+            }
+            return true;
+        }
+
+        private static byte[] DeriveKey(byte[] salt)
+        {
+            var password = Encoding.UTF8.GetBytes($"{Environment.MachineName}\\{Environment.UserName}");
+            return Rfc2898DeriveBytes.Pbkdf2(password, salt, PBKDF2_ITERATIONS, HashAlgorithmName.SHA256, 32);
+        }
+
+        private static byte[] DeriveLegacyKey()
         {
             var machineName = Encoding.UTF8.GetBytes(Environment.MachineName);
             var userName = Encoding.UTF8.GetBytes(Environment.UserName);
@@ -146,8 +201,9 @@ namespace FastGithub.HttpServer.Certs
                     }
                     fileInfo.SetAccessControl(accessControl);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Debug.WriteLine($"设置密钥文件权限失败: {ex.Message}");
                 }
             }
             else
@@ -162,8 +218,9 @@ namespace FastGithub.HttpServer.Certs
                         CreateNoWindow = true
                     });
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Debug.WriteLine($"设置密钥文件权限失败: {ex.Message}");
                 }
             }
         }
@@ -205,8 +262,9 @@ namespace FastGithub.HttpServer.Certs
                         WindowStyle = ProcessWindowStyle.Hidden
                     });
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Debug.WriteLine($"Git SSL 配置失败: {ex.Message}");
                 }
             }
         }
@@ -223,6 +281,7 @@ namespace FastGithub.HttpServer.Certs
                     privateKeyPem = Encoding.ASCII.GetString(protectedKey);
                     var reEncrypted = EncryptKey(protectedKey);
                     File.WriteAllBytes(this.CaKeyFilePath, reEncrypted);
+                    this.logger.LogInformation("已将旧的明文密钥重新加密为新格式");
                 }
                 else
                 {

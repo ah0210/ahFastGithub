@@ -15,33 +15,21 @@ using System.Threading.Tasks;
 
 namespace FastGithub.Http
 {
-    /// <summary>
-    /// HttpClientHandler
-    /// </summary> 
     class HttpClientHandler : DelegatingHandler
     {
         private readonly DomainConfig domainConfig;
+        private readonly FastGithubConfig fastGithubConfig;
         private readonly IDomainResolver domainResolver;
         private readonly TimeSpan connectTimeout = TimeSpan.FromSeconds(10d);
 
-        /// <summary>
-        /// HttpClientHandler
-        /// </summary>
-        /// <param name="domainConfig"></param>
-        /// <param name="domainResolver"></param> 
-        public HttpClientHandler(DomainConfig domainConfig, IDomainResolver domainResolver)
+        public HttpClientHandler(DomainConfig domainConfig, FastGithubConfig fastGithubConfig, IDomainResolver domainResolver)
         {
             this.domainConfig = domainConfig;
+            this.fastGithubConfig = fastGithubConfig;
             this.domainResolver = domainResolver;
             this.InnerHandler = this.CreateSocketsHttpHandler();
         }
 
-        /// <summary>
-        /// 发送请求
-        /// </summary>
-        /// <param name="request"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var uri = request.RequestUri;
@@ -50,12 +38,10 @@ namespace FastGithub.Http
                 throw new FastGithubException("必须指定请求的URI");
             }
 
-            // 请求上下文信息
             var isHttps = uri.Scheme == Uri.UriSchemeHttps;
             var tlsSniValue = this.domainConfig.GetTlsSniPattern().WithDomain(uri.Host).WithRandom();
             request.SetRequestContext(new RequestContext(isHttps, tlsSniValue));
 
-            // 设置请求头host，修改协议为http
             request.Headers.Host = uri.Host;
             request.RequestUri = new UriBuilder(uri) { Scheme = Uri.UriSchemeHttp }.Uri;
 
@@ -68,10 +54,6 @@ namespace FastGithub.Http
             return await base.SendAsync(request, cancellationToken);
         }
 
-        /// <summary>
-        /// 创建转发代理的httpHandler
-        /// </summary>
-        /// <returns></returns>
         private SocketsHttpHandler CreateSocketsHttpHandler()
         {
             return new SocketsHttpHandler
@@ -85,12 +67,6 @@ namespace FastGithub.Http
             };
         }
 
-        /// <summary>
-        /// 连接回调
-        /// </summary>
-        /// <param name="context"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         private async ValueTask<Stream> ConnectCallback(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
         {
             var innerExceptions = new List<Exception>();
@@ -115,14 +91,11 @@ namespace FastGithub.Http
                 }
             }
 
-            // 如果连接失败，尝试清除该域名的缓存并重新测速
             try
             {
-                // 尝试强制刷新该域名的测速缓存
                 await this.domainResolver.RefreshCacheAsync(context.DnsEndPoint, cancellationToken);
-                
-                // 重新获取IP端点并尝试连接
-                innerExceptions.Clear(); // 清空之前的异常
+
+                innerExceptions.Clear();
                 var refreshedIpEndPoints = this.GetIPEndPointsAsync(context.DnsEndPoint, cancellationToken);
 
                 await foreach (var ipEndPoint in refreshedIpEndPoints)
@@ -146,20 +119,12 @@ namespace FastGithub.Http
             }
             catch (Exception refreshEx)
             {
-                // 记录刷新缓存时的异常，但继续尝试连接
                 System.Diagnostics.Debug.WriteLine($"刷新域名缓存失败: {refreshEx.Message}");
             }
 
             throw new AggregateException("找不到任何可成功连接的IP", innerExceptions);
         }
 
-        /// <summary>
-        /// 建立连接
-        /// </summary>
-        /// <param name="context"></param>
-        /// <param name="ipEndPoint"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         private async ValueTask<Stream> ConnectAsync(SocketsHttpConnectionContext context, IPEndPoint ipEndPoint, CancellationToken cancellationToken)
         {
             var socket = new Socket(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
@@ -182,24 +147,20 @@ namespace FastGithub.Http
 
             return sslStream;
 
-            // 验证证书有效性
             bool ValidateServerCertificate(object sender, X509Certificate? cert, X509Chain? chain, SslPolicyErrors errors)
             {
                 var domain = context.DnsEndPoint.Host;
-                if (domain.EndsWith(".github.com") || domain == "github.com" || domain.EndsWith(".githubusercontent.com") || domain == "collector.github.com" ||
-                    domain.EndsWith(".huggingface.co") || domain == "huggingface.co")
+                if (this.fastGithubConfig.IsMatch(domain))
                 {
                     return true;
                 }
 
-                // 对于其他域名，使用宽松的验证规则
                 var seriousErrors = errors & ~(SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch);
                 if (seriousErrors != SslPolicyErrors.None)
                 {
                     return false;
                 }
 
-                // 处理名称不匹配错误
                 if (errors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch))
                 {
                     if (this.domainConfig.TlsIgnoreNameMismatch == true)
@@ -211,17 +172,10 @@ namespace FastGithub.Http
                     return dnsNames.Any(dns => IsMatch(dns, domain));
                 }
 
-                // 允许其他情况（包括证书链错误）
                 return true;
             }
         }
 
-        /// <summary>
-        /// 解析为IPEndPoint
-        /// </summary>
-        /// <param name="dnsEndPoint"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         private async IAsyncEnumerable<IPEndPoint> GetIPEndPointsAsync(DnsEndPoint dnsEndPoint, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             if (IPAddress.TryParse(dnsEndPoint.Host, out var address))
@@ -242,11 +196,6 @@ namespace FastGithub.Http
             }
         }
 
-        /// <summary>
-        /// 读取使用的DNS名称
-        /// </summary>
-        /// <param name="cert"></param>
-        /// <returns></returns>
         private static IEnumerable<string> ReadDnsNames(X509Certificate? cert)
         {
             if (cert is X509Certificate2 x509)
@@ -260,12 +209,6 @@ namespace FastGithub.Http
             return Array.Empty<string>();
         }
 
-        /// <summary>
-        /// 比较域名
-        /// </summary>
-        /// <param name="dnsName"></param>
-        /// <param name="domain"></param>
-        /// <returns></returns>
         private static bool IsMatch(string dnsName, string? domain)
         {
             if (domain == null)

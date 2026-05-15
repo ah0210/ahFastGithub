@@ -18,9 +18,6 @@ using System.Threading.Tasks;
 
 namespace FastGithub.DomainResolve
 {
-    /// <summary>
-    /// DNS客户端
-    /// </summary>
     sealed class DnsClient : IDisposable
     {
         private const int DNS_PORT = 53;
@@ -34,24 +31,18 @@ namespace FastGithub.DomainResolve
         private readonly IMemoryCache dnsStateCache;
         private readonly IMemoryCache dnsLookupCache;
 
-        private readonly TimeSpan stateExpiration = TimeSpan.FromMinutes(10d); // 延长DNS服务器状态缓存时间
-        private readonly TimeSpan minTimeToLive = TimeSpan.FromMinutes(1d); // 延长最小缓存时间
-        private readonly TimeSpan maxTimeToLive = TimeSpan.FromMinutes(30d); // 延长最大缓存时间
+        private readonly TimeSpan stateExpiration = TimeSpan.FromMinutes(10d);
+        private readonly TimeSpan minTimeToLive = TimeSpan.FromMinutes(1d);
+        private readonly TimeSpan maxTimeToLive = TimeSpan.FromMinutes(30d);
 
-        private readonly int resolveTimeout = (int)TimeSpan.FromSeconds(3d).TotalMilliseconds; // 减少解析超时时间
-        private static readonly TimeSpan tcpConnectTimeout = TimeSpan.FromSeconds(1.5d); // 减少TCP连接超时时间
+        private readonly int resolveTimeout = (int)TimeSpan.FromSeconds(3d).TotalMilliseconds;
+        private static readonly TimeSpan tcpConnectTimeout = TimeSpan.FromSeconds(1.5d);
+
+        private const int MaxCacheSize = 1000;
+        private const int MaxSemaphoreCount = 2000;
 
         private record LookupResult(IList<IPAddress> Addresses, TimeSpan TimeToLive);
 
-        private readonly Timer cleanupTimer;
-        private const int MaxCacheSize = 1000; // 最大缓存条目数
-
-        /// <summary>
-        /// DNS客户端
-        /// </summary>
-        /// <param name="dnscryptProxy"></param>
-        /// <param name="fastGithubConfig"></param>
-        /// <param name="logger"></param>
         public DnsClient(
             DnscryptProxy dnscryptProxy,
             FastGithubConfig fastGithubConfig,
@@ -60,37 +51,32 @@ namespace FastGithub.DomainResolve
             this.dnscryptProxy = dnscryptProxy;
             this.fastGithubConfig = fastGithubConfig;
             this.logger = logger;
-            
-            // 初始化带大小限制的内存缓存
+
             var stateCacheOptions = Options.Create(new MemoryCacheOptions
             {
-                SizeLimit = 1000 // 限制状态缓存大小
+                SizeLimit = 1000,
+                ExpirationScanFrequency = TimeSpan.FromMinutes(5)
             });
             this.dnsStateCache = new MemoryCache(stateCacheOptions);
 
             var lookupCacheOptions = Options.Create(new MemoryCacheOptions
             {
-                SizeLimit = 5000 // 限制DNS查询缓存大小
+                SizeLimit = 5000,
+                ExpirationScanFrequency = TimeSpan.FromMinutes(5)
             });
             this.dnsLookupCache = new MemoryCache(lookupCacheOptions);
-            
-            // 启动定时清理任务，每10分钟清理一次semaphoreSlims
-            this.cleanupTimer = new Timer(this.CleanupSemaphoreSlims, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
         }
 
-        /// <summary>
-        /// 解析域名
-        /// </summary>
-        /// <param name="endPoint">远程结节</param>
-        /// <param name="fastSort">是否使用快速排序</param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         public async IAsyncEnumerable<IPAddress> ResolveAsync(DnsEndPoint endPoint, bool fastSort, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             var hashSet = new HashSet<IPAddress>();
-            await foreach (var dns in this.GetDnsServersAsync(cancellationToken))
+            var overallTimeout = TimeSpan.FromSeconds(30d);
+            using var overallCts = new CancellationTokenSource(overallTimeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, overallCts.Token);
+
+            await foreach (var dns in this.GetDnsServersAsync(linkedCts.Token))
             {
-                var addresses = await this.LookupAsync(dns, endPoint, fastSort, cancellationToken);
+                var addresses = await this.LookupAsync(dns, endPoint, fastSort, linkedCts.Token);
                 foreach (var address in addresses)
                 {
                     if (hashSet.Add(address) == true)
@@ -101,10 +87,6 @@ namespace FastGithub.DomainResolve
             }
         }
 
-        /// <summary>
-        /// 获取dns服务
-        /// </summary>
-        /// <returns></returns>
         private async IAsyncEnumerable<IPEndPoint> GetDnsServersAsync([EnumeratorCancellation] CancellationToken cancellationToken)
         {
             var cryptDns = this.dnscryptProxy.LocalEndPoint;
@@ -114,7 +96,6 @@ namespace FastGithub.DomainResolve
             }
             else
             {
-                // 当DNSCrypt-Proxy不可用时，对FallbackDns进行测速排序，优先使用响应最快的DNS服务器
                 var sortedDnsServers = await this.GetSortedFallbackDnsAsync(cancellationToken);
                 foreach (var dns in sortedDnsServers)
                 {
@@ -122,19 +103,32 @@ namespace FastGithub.DomainResolve
                 }
             }
 
-            // 确保至少返回一个DNS服务器，作为最后的备选
             if (cryptDns == null && (this.fastGithubConfig.FallbackDns == null || this.fastGithubConfig.FallbackDns.Length == 0))
             {
                 yield return new IPEndPoint(IPAddress.Parse("8.8.8.8"), DNS_PORT);
             }
         }
 
-        /// <summary>
-        /// 获取dns是否可用
-        /// </summary>
-        /// <param name="dns"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        private SemaphoreSlim GetOrCreateSemaphore(string key)
+        {
+            if (this.semaphoreSlims.TryGetValue(key, out var semaphore))
+                return semaphore;
+
+            semaphore = this.semaphoreSlims.GetOrAdd(key, _ =>
+            {
+                if (this.semaphoreSlims.Count > MaxSemaphoreCount)
+                {
+                    var keyToRemove = this.semaphoreSlims.Keys.FirstOrDefault();
+                    if (keyToRemove != null)
+                    {
+                        this.semaphoreSlims.TryRemove(keyToRemove, out var _removed);
+                    }
+                }
+                return new SemaphoreSlim(1, 1);
+            });
+            return semaphore;
+        }
+
         private async ValueTask<bool> IsDnsAvailableAsync(IPEndPoint dns, CancellationToken cancellationToken)
         {
             if (dns.Port != DNS_PORT)
@@ -148,7 +142,7 @@ namespace FastGithub.DomainResolve
             }
 
             var key = dns.ToString();
-            var semaphore = this.semaphoreSlims.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+            var semaphore = this.GetOrCreateSemaphore(key);
             await semaphore.WaitAsync(CancellationToken.None);
 
             try
@@ -178,18 +172,10 @@ namespace FastGithub.DomainResolve
             }
         }
 
-        /// <summary>
-        /// 解析域名
-        /// </summary>
-        /// <param name="dns"></param>
-        /// <param name="endPoint"></param>
-        /// <param name="fastSort"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         private async Task<IList<IPAddress>> LookupAsync(IPEndPoint dns, DnsEndPoint endPoint, bool fastSort, CancellationToken cancellationToken = default)
         {
             var key = $"{dns}/{endPoint}";
-            var semaphore = this.semaphoreSlims.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+            var semaphore = this.GetOrCreateSemaphore(key);
             await semaphore.WaitAsync(CancellationToken.None);
 
             try
@@ -202,7 +188,7 @@ namespace FastGithub.DomainResolve
                 return this.dnsLookupCache.Set(key, result.Addresses, new MemoryCacheEntryOptions
                 {
                     AbsoluteExpirationRelativeToNow = result.TimeToLive,
-                    Size = result.Addresses.Count() // 使用实际大小
+                    Size = Math.Max(1, result.Addresses.Count)
                 });
             }
             catch (OperationCanceledException)
@@ -225,11 +211,6 @@ namespace FastGithub.DomainResolve
             }
         }
 
-        /// <summary>
-        /// 对FallbackDns进行测速排序
-        /// </summary>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         private async Task<List<IPEndPoint>> GetSortedFallbackDnsAsync(CancellationToken cancellationToken)
         {
             if (this.fastGithubConfig.FallbackDns == null || this.fastGithubConfig.FallbackDns.Length == 0)
@@ -251,7 +232,7 @@ namespace FastGithub.DomainResolve
                 }
                 catch (Exception)
                 {
-                    // 忽略异常，标记为不可用
+                    return (dns, latency: TimeSpan.MaxValue, available: false);
                 }
                 return (dns, latency: TimeSpan.MaxValue, available: false);
             });
@@ -264,11 +245,6 @@ namespace FastGithub.DomainResolve
                 .ToList();
         }
 
-        /// <summary>
-        /// 是否为Socket异常
-        /// </summary>
-        /// <param name="ex"></param>
-        /// <returns></returns>
         private static bool IsSocketException(Exception ex)
         {
             if (ex is SocketException)
@@ -280,15 +256,6 @@ namespace FastGithub.DomainResolve
             return inner != null && IsSocketException(inner);
         }
 
-
-        /// <summary>
-        /// 解析域名
-        /// </summary>
-        /// <param name="dns"></param>
-        /// <param name="endPoint"></param>
-        /// <param name="fastSort"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         private async Task<LookupResult> LookupCoreAsync(IPEndPoint dns, DnsEndPoint endPoint, bool fastSort, CancellationToken cancellationToken = default)
         {
             if (endPoint.Host == LOCALHOST)
@@ -338,13 +305,6 @@ namespace FastGithub.DomainResolve
             return new LookupResult(addresses, timeToLive);
         }
 
-        /// <summary>
-        /// 获取IP记录
-        /// </summary>
-        /// <param name="resolver"></param>
-        /// <param name="domain"></param> 
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         private static async Task<IList<IPAddressResourceRecord>> GetAddressRecordsAsync(IRequestResolver resolver, string domain, CancellationToken cancellationToken)
         {
             var addressRecords = new List<IPAddressResourceRecord>();
@@ -361,7 +321,6 @@ namespace FastGithub.DomainResolve
             }
             return addressRecords;
 
-
             async Task<IEnumerable<IPAddressResourceRecord>> GetRecordsAsync(RecordType recordType)
             {
                 var request = new Request
@@ -377,14 +336,6 @@ namespace FastGithub.DomainResolve
             }
         }
 
-
-        /// <summary>
-        /// 连接速度排序
-        /// </summary>
-        /// <param name="addresses"></param>
-        /// <param name="port"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         private static async Task<IList<IPAddress>> OrderByConnectAnyAsync(IList<IPAddress> addresses, int port, CancellationToken cancellationToken)
         {
             if (addresses.Count <= 1)
@@ -415,13 +366,6 @@ namespace FastGithub.DomainResolve
             return list;
         }
 
-        /// <summary>
-        /// 连接指定ip和端口
-        /// </summary>
-        /// <param name="address"></param>
-        /// <param name="port"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         private static async Task<IPAddress?> ConnectAsync(IPAddress address, int port, CancellationToken cancellationToken)
         {
             try
@@ -436,50 +380,14 @@ namespace FastGithub.DomainResolve
             }
         }
 
-        /// <summary>
-        /// 清理过期的semaphoreSlim对象
-        /// </summary>
-        /// <param name="state"></param>
-        private void CleanupSemaphoreSlims(object? state)
-        {
-            try
-            {
-                // 移除空的键值对，实际上我们无法直接知道SemaphoreSlim是否还在被使用
-                // 但我们可以通过限制字典大小来控制内存使用
-                if (this.semaphoreSlims.Count > MaxCacheSize)
-                {
-                    // 简单地清空字典，让GC回收未被使用的SemaphoreSlim对象
-                    // 在高并发情况下，这可能导致重复创建，但能有效控制内存使用
-                    var keys = this.semaphoreSlims.Keys.Take(this.semaphoreSlims.Count - MaxCacheSize / 2).ToList();
-                    foreach (var key in keys)
-                    {
-                        if (this.semaphoreSlims.TryRemove(key, out var semaphore))
-                        {
-                            semaphore?.Dispose();
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // 忽略清理过程中的异常
-            }
-        }
-
-        /// <summary>
-        /// 释放资源
-        /// </summary>
         public void Dispose()
         {
-            this.cleanupTimer?.Dispose();
-            
-            // 释放所有semaphoreSlim对象
             foreach (var semaphore in this.semaphoreSlims.Values)
             {
                 semaphore?.Dispose();
             }
             this.semaphoreSlims.Clear();
-            
+
             this.dnsStateCache?.Dispose();
             this.dnsLookupCache?.Dispose();
         }

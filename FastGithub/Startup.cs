@@ -12,6 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Text.Json;
 
@@ -67,10 +68,9 @@ namespace FastGithub
             const string APPSETTINGS = "appsettings";
             if (Directory.Exists(APPSETTINGS) == true)
             {
-                foreach (var file in Directory.GetFiles(APPSETTINGS, "appsettings.*.json"))
+                foreach (var file in Directory.GetFiles(APPSETTINGS, "appsettings.*.json").OrderBy(Path.GetFileName))
                 {
-                    var jsonFile = Path.Combine(APPSETTINGS, Path.GetFileName(file));
-                    builder.Configuration.AddJsonFile(jsonFile, true, true);
+                    builder.Configuration.AddJsonFile(file, true, true);
                 }
             }
         }

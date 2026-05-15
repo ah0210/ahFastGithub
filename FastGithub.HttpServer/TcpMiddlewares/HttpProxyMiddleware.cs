@@ -100,10 +100,7 @@ namespace FastGithub.HttpServer.TcpMiddlewares
 
         private static bool IsLocalhost(IPAddress address)
         {
-            return IPAddress.IsLoopback(address)
-                || IPAddress.IPv6Loopback.Equals(address)
-                || address.Equals(IPAddress.Any)
-                || address.Equals(IPAddress.IPv6Any);
+            return IPAddress.IsLoopback(address);
         }
 
 
