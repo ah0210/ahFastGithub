@@ -66,10 +66,11 @@ namespace FastGithub.UI
         {
             try
             {
-                var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resource", "githubfast.png");
-                if (File.Exists(iconPath))
+                var assembly = Assembly.GetExecutingAssembly();
+                using var stream = assembly.GetManifestResourceStream("FastGithub.UI.Resource.githubfast.png");
+                if (stream != null)
                 {
-                    using var bitmap = new Bitmap(iconPath);
+                    using var bitmap = new Bitmap(stream);
                     var size = new System.Drawing.Size(48, 48);
                     using var scaled = new Bitmap(bitmap, size);
                     return System.Drawing.Icon.FromHandle(scaled.GetHicon());

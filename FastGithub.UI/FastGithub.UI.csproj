@@ -14,10 +14,7 @@
 
 	<ItemGroup>
 		<None Remove="Resource\*.*" />
-		<Resource Include="Resource\*.*" />
-		<None Update="Resource\githubfast.png">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
+		<EmbeddedResource Include="Resource\githubfast.png" />
 	</ItemGroup> 
 
 	<ItemGroup>
