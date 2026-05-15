@@ -130,7 +130,35 @@ if exist "%linuxarm64_with_dnscrypt%\dnscrypt-proxy\dnscrypt-proxy.toml" (
     echo Updated IPv6 setting in Linux ARM64 with DNSCrypt-Proxy
 )
 
-REM 9. Show build results
+REM 9. Clean up unnecessary files
+echo.
+echo ==================================================
+echo Cleaning unnecessary files...
+echo ==================================================
+for %%d in ("%linuxx64_with_dnscrypt%" "%linuxx64_without_dnscrypt%" "%linuxarm64_with_dnscrypt%" "%linuxarm64_without_dnscrypt%") do (
+    if exist "%%d\README.md" (
+        echo Deleting %%d\README.md
+        del /Q "%%d\README.md"
+    )
+    if exist "%%d\LICENSE" (
+        echo Deleting %%d\LICENSE
+        del /Q "%%d\LICENSE"
+    )
+    if exist "%%d\*.pdb" (
+        echo Deleting %%d\*.pdb
+        del /Q "%%d\*.pdb"
+    )
+    if exist "%%d\*.xml" (
+        echo Deleting %%d\*.xml
+        del /Q "%%d\*.xml"
+    )
+    if exist "%%d\*.dll.config" (
+        echo Deleting %%d\*.dll.config
+        del /Q "%%d\*.dll.config"
+    )
+)
+
+REM 10. Show build results
 echo.
 echo ==================================================
 echo Build completed!

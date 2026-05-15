@@ -8,7 +8,6 @@
 		<TargetFramework>net10.0-windows</TargetFramework>
 		<ApplicationIcon>app.ico</ApplicationIcon>
 		<ApplicationManifest>app.manifest</ApplicationManifest>
-		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<AutoGenerateBindingRedirects>True</AutoGenerateBindingRedirects>
 		<StartupObject></StartupObject>
 	</PropertyGroup>

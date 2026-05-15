@@ -71,7 +71,58 @@ if errorlevel 1 (
     echo Warning: Building UI project to Windows x64 without DNSCrypt-Proxy failed, but continue
 )
 
-REM 5. Show build results
+REM 5. Clean up unnecessary files
+echo.
+echo ==================================================
+echo Cleaning unnecessary files...
+echo ==================================================
+for %%d in ("%winx64_with_dnscrypt%" "%winx64_without_dnscrypt%") do (
+    REM UI project binding redirects
+    if exist "%%d\*.dll.config" (
+        echo Deleting %%d\*.dll.config
+        del /Q "%%d\*.dll.config"
+    )
+    REM Static web assets (not used)
+    if exist "%%d\*.staticwebassets.endpoints.json" (
+        echo Deleting %%d\*.staticwebassets.endpoints.json
+        del /Q "%%d\*.staticwebassets.endpoints.json"
+    )
+    REM IIS hosting module (not used)
+    if exist "%%d\aspnetcorev2_inprocess.dll" (
+        echo Deleting %%d\aspnetcorev2_inprocess.dll
+        del /Q "%%d\aspnetcorev2_inprocess.dll"
+    )
+    REM Source code references (copied from project references)
+    if exist "%%d\README.md" (
+        echo Deleting %%d\README.md
+        del /Q "%%d\README.md"
+    )
+    if exist "%%d\LICENSE" (
+        echo Deleting %%d\LICENSE
+        del /Q "%%d\LICENSE"
+    )
+    REM UI project deps and runtime config (not needed for end users)
+    if exist "%%d\FastGithub.UI.deps.json" (
+        echo Deleting %%d\FastGithub.UI.deps.json
+        del /Q "%%d\FastGithub.UI.deps.json"
+    )
+    if exist "%%d\FastGithub.UI.runtimeconfig.json" (
+        echo Deleting %%d\FastGithub.UI.runtimeconfig.json
+        del /Q "%%d\FastGithub.UI.runtimeconfig.json"
+    )
+    REM PDB debug symbols
+    if exist "%%d\*.pdb" (
+        echo Deleting %%d\*.pdb
+        del /Q "%%d\*.pdb"
+    )
+    REM XML documentation files
+    if exist "%%d\*.xml" (
+        echo Deleting %%d\*.xml
+        del /Q "%%d\*.xml"
+    )
+)
+
+REM 6. Show build results
 echo.
 echo ==================================================
 echo Build completed!

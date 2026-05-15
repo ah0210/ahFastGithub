@@ -6,26 +6,25 @@ using System.Windows.Interop;
 
 namespace FastGithub.UI
 {
-    /// <summary>
-    /// MainWindow.xaml 的交互逻辑
-    /// </summary>
     public partial class MainWindow : Window
     {
         private readonly System.Windows.Forms.NotifyIcon notifyIcon;
         private const string FASTGITHUB_UI = "FastGithub.UI";
-        private const string RELEASES_URI = "https://github.com/creazyboyone/FastGithub";
+        private const string SUPPORT_URL = "https://www.17you.com";
+        private const string RELEASES_URL = "https://github.com/ah0210/ahFastGithub";
 
         public MainWindow()
         {
             InitializeComponent();
 
             var contextMenuStrip = new System.Windows.Forms.ContextMenuStrip();
+            contextMenuStrip.Font = new System.Drawing.Font("Microsoft YaHei UI", 10F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
             var supportItem = contextMenuStrip.Items.Add("升级支持");
             supportItem.Click += (s, e) =>
             {
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = "https://www.17you.com",
+                    FileName = SUPPORT_URL,
                     UseShellExecute = true
                 });
             };
